@@ -27,6 +27,9 @@ public final class PeerSessionManager {
   /// Last known RTT for each peer (ms).
   private(set) var peerRTT: [String: Double] = [:]
 
+  /// Called when a peer transitions to a non-connected state after being connected.
+  var onPeerDisconnected: (@MainActor (String) -> Void)?
+
   /// Peers with an active WebRTC connection.
   var connectedPeers: [String] {
     peerStates.filter { $0.value == .connected }.map(\.key)
@@ -58,7 +61,11 @@ public final class PeerSessionManager {
 
     await session.setStateChangeHandler { [weak self] newState in
       Task { @MainActor [weak self] in
+        let previous = self?.peerStates[peerId]
         self?.peerStates[peerId] = newState
+        if previous == .connected, newState == .failed || newState == .disconnected {
+          self?.onPeerDisconnected?(peerId)
+        }
       }
     }
 
@@ -84,7 +91,11 @@ public final class PeerSessionManager {
 
     await session.setStateChangeHandler { [weak self] newState in
       Task { @MainActor [weak self] in
+        let previous = self?.peerStates[peerId]
         self?.peerStates[peerId] = newState
+        if previous == .connected, newState == .failed || newState == .disconnected {
+          self?.onPeerDisconnected?(peerId)
+        }
       }
     }
 

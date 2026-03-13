@@ -431,6 +431,11 @@ public final class SwarmCoordinator {
     RAGSyncCoordinator.shared.ragSyncDelegate = ragSyncDelegate
     RAGSyncCoordinator.shared.start()
 
+    // Wire WebRTC session disconnection to connectedWorkers cleanup
+    peerSessionManager.onPeerDisconnected = { [weak self] peerId in
+      self?.handlePeerDisconnected(peerId)
+    }
+
     // Start WebRTC signaling responder — watches Firestore for incoming
     // WebRTC SDP offers and completes data channel setup
     startWebRTCSignalingResponder()
@@ -758,6 +763,7 @@ public final class SwarmCoordinator {
       myDeviceId: capabilities.deviceId,
       remoteDeviceId: peerId
     )
+    signaling.purpose = "session"
     
     try await peerSessionManager.connectToPeer(peerId, signaling: signaling)
     startListeningOnPeerSession(peerId)
