@@ -173,7 +173,7 @@ final class RunManager {
       projectPath: projectPath,
       templateName: templateName,
       baseBranch: baseBranch,
-      requireReviewGate: true,
+      requireReviewGate: false,
       runOptions: runOptions,
       sourceChainRunId: sourceChainRunId,
       operatorGuidance: operatorGuidance,
@@ -290,6 +290,11 @@ final class RunManager {
     if run.status == .pending {
       try await worktreeRunner.startRun(run)
     }
+  }
+
+  /// Advance an execution past a confirmation gate (e.g. approve posting a PR review).
+  func confirmExecution(_ execution: ParallelWorktreeExecution) async {
+    await worktreeRunner.confirmExecution(execution)
   }
 
   // MARK: - Execution Review

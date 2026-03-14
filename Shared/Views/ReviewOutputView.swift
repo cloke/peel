@@ -60,10 +60,68 @@ func parseReviewOutput(_ output: String) -> ParsedReview {
 private struct ReviewJSONPayload: Decodable {
   let summary: String?
   let riskLevel: String?
-  let issues: [String]?
-  let suggestions: [String]?
+  let issues: AnyCodableArray?
+  let suggestions: AnyCodableArray?
   let ciStatus: String?
   let verdict: String?
+  // Additional fields agents sometimes use
+  let risk: String?
+  let risk_level: String?
+
+  var resolvedRiskLevel: String? {
+    riskLevel ?? risk_level ?? risk
+  }
+}
+
+/// Wrapper that decodes either [String] or [{...}] into [String]
+private struct AnyCodableArray: Decodable {
+  let values: [String]
+  init(from decoder: Decoder) throws {
+    var container = try decoder.unkeyedContainer()
+    var result: [String] = []
+    while !container.isAtEnd {
+      if let str = try? container.decode(String.self) {
+        result.append(str)
+      } else if let obj = try? container.decode([String: AnyCodableValue].self) {
+        // Extract description/title/message from object
+        let desc = obj["description"]?.stringValue
+          ?? obj["title"]?.stringValue
+          ?? obj["message"]?.stringValue
+          ?? obj["text"]?.stringValue
+        let severity = obj["severity"]?.stringValue
+        if let desc {
+          let prefix = severity.map { "[\($0.capitalized)] " } ?? ""
+          result.append("\(prefix)\(desc)")
+        }
+      } else {
+        _ = try? container.decode(AnyCodableValue.self) // skip unknown
+      }
+    }
+    values = result
+  }
+}
+
+private enum AnyCodableValue: Decodable {
+  case string(String)
+  case int(Int)
+  case double(Double)
+  case bool(Bool)
+  case null
+
+  var stringValue: String? {
+    if case .string(let s) = self { return s }
+    return nil
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if let s = try? container.decode(String.self) { self = .string(s) }
+    else if let i = try? container.decode(Int.self) { self = .int(i) }
+    else if let d = try? container.decode(Double.self) { self = .double(d) }
+    else if let b = try? container.decode(Bool.self) { self = .bool(b) }
+    else if container.decodeNil() { self = .null }
+    else { self = .null }
+  }
 }
 
 private func parseStructuredReviewJSON(_ output: String) -> ParsedReview? {
@@ -73,6 +131,8 @@ private func parseStructuredReviewJSON(_ output: String) -> ParsedReview? {
     guard let data = candidate.data(using: .utf8),
           let payload = try? decoder.decode(ReviewJSONPayload.self, from: data)
     else { continue }
+    // Skip non-review JSON (e.g. {branch, tasks[]} from code change templates)
+    guard payload.summary != nil || payload.verdict != nil || payload.issues != nil else { continue }
 
     var verdict: ParsedReview.Verdict = {
       switch payload.verdict?.uppercased() {
@@ -84,9 +144,9 @@ private func parseStructuredReviewJSON(_ output: String) -> ParsedReview? {
     }()
 
     // Infer verdict from content when not explicitly provided
-    let issues = payload.issues ?? []
+    let issues = payload.issues?.values ?? []
     if verdict == .unknown {
-      if issues.contains(where: { $0.lowercased().hasPrefix("high") || $0.lowercased().hasPrefix("critical") }) {
+      if issues.contains(where: { $0.lowercased().hasPrefix("high") || $0.lowercased().hasPrefix("critical") || $0.lowercased().hasPrefix("[high") || $0.lowercased().hasPrefix("[critical") }) {
         verdict = .requestChanges
       } else if !issues.isEmpty {
         verdict = .comment
@@ -97,9 +157,9 @@ private func parseStructuredReviewJSON(_ output: String) -> ParsedReview? {
 
     return ParsedReview(
       summary: (payload.summary?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? String(output.prefix(500)),
-      riskLevel: (payload.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "unknown",
+      riskLevel: (payload.resolvedRiskLevel?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "unknown",
       issues: issues,
-      suggestions: payload.suggestions ?? [],
+      suggestions: payload.suggestions?.values ?? [],
       ciStatus: payload.ciStatus,
       verdict: verdict,
       rawOutput: output

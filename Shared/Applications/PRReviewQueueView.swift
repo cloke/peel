@@ -21,33 +21,47 @@ struct PRReviewQueueSection: View {
     let active = queue.activeItems
     let completed = queue.completedItems
 
-    if !active.isEmpty || !completed.isEmpty {
-      VStack(alignment: .leading, spacing: 12) {
-        SectionHeader("PR Reviews")
+    VStack(alignment: .leading, spacing: 12) {
+      SectionHeader("PR Reviews")
 
-        if !active.isEmpty {
+      if active.isEmpty && completed.isEmpty {
+        VStack(spacing: 8) {
+          Image(systemName: "arrow.triangle.pull")
+            .font(.largeTitle)
+            .foregroundStyle(.tertiary)
+          Text("No PR Reviews")
+            .font(.callout.weight(.medium))
+            .foregroundStyle(.secondary)
+          Text("Start a review from Agent Runs or via MCP.")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+      }
+
+      if !active.isEmpty {
+        LazyVStack(spacing: 1) {
+          ForEach(active, id: \.id) { item in
+            PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
+          }
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+      }
+
+      if !completed.isEmpty {
+        DisclosureGroup("Completed (\(completed.count))") {
           LazyVStack(spacing: 1) {
-            ForEach(active, id: \.id) { item in
+            ForEach(completed.prefix(10), id: \.id) { item in
               PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
             }
           }
           .background(Color(nsColor: .controlBackgroundColor))
           .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-
-        if !completed.isEmpty {
-          DisclosureGroup("Completed (\(completed.count))") {
-            LazyVStack(spacing: 1) {
-              ForEach(completed.prefix(10), id: \.id) { item in
-                PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
-              }
-            }
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-          }
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
     }
   }

@@ -89,12 +89,12 @@ struct RunsListView: View {
         Divider()
         runList(mgr: mgr)
       }
-      .frame(minWidth: 220, idealWidth: 280, maxWidth: 340)
+      .frame(minWidth: 180, idealWidth: 260, maxWidth: 340)
 
       detailContent(mgr: mgr)
-        .frame(minWidth: 400, maxWidth: .infinity)
+        .frame(minWidth: 300, maxWidth: .infinity)
     }
-    .frame(minWidth: 700, idealWidth: 900)
+    .frame(minWidth: 500, idealWidth: 900)
     .navigationTitle("Runs")
     .sheet(isPresented: $showingNewRunSheet) {
       if let runner {
@@ -335,6 +335,12 @@ struct RunsListView: View {
         guard let sel = viewModel.selectedRunId else { return }
         if !newIds.contains(sel) && !history.contains(where: { $0.id == sel }) {
           viewModel.selectedRunId = newIds.first
+        }
+      }
+      .onChange(of: completed.count) { oldCount, newCount in
+        // Auto-expand the Completed section when a run transitions to a terminal state
+        if newCount > oldCount {
+          viewModel.showCompletedSection = true
         }
       }
       .onChange(of: automationSelectedChain) { _, newValue in

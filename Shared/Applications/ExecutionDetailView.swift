@@ -194,6 +194,7 @@ struct ExecutionDetailView: View {
     case .waitingForDependencies: ("arrow.triangle.branch", .secondary, "Waiting")
     case .creatingWorktree, .running: ("bolt.fill", .blue, "Running")
     case .awaitingReview: ("eye.circle.fill", .orange, "Awaiting Review")
+    case .awaitingConfirmation: ("pause.circle.fill", .yellow, "Awaiting Confirmation")
     case .reviewed: ("checkmark.circle", .secondary, "Reviewed")
     case .approved: ("checkmark.circle.fill", .green, "Approved")
     case .rejected: ("xmark.circle.fill", .red, "Rejected")

@@ -90,6 +90,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
   case failed(String)
   case cancelled
   case conflicted([String])  // associated value = list of conflicted file paths
+  case awaitingConfirmation  // Chain is paused at a confirmation gate
 
   var isTerminal: Bool {
     switch self {
@@ -105,6 +106,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
     case .creatingWorktree: return "Creating Worktree"
     case .running: return "Running"
     case .awaitingReview: return "Awaiting Review"
+    case .awaitingConfirmation: return "Awaiting Confirmation"
     case .reviewed: return "Reviewed"
     case .approved: return "Approved"
     case .rejected: return "Rejected"
@@ -398,6 +400,10 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
     executions.filter { $0.status == .merged }.count
   }
 
+  var cancelledCount: Int {
+    executions.filter { $0.status == .cancelled }.count
+  }
+
   var totalFilesChanged: Int {
     executions.reduce(0) { $0 + $1.filesChanged }
   }
@@ -519,6 +525,18 @@ final class ParallelWorktreeRunner {
     self.workspaceService = workspaceService
     self.agentManager = agentManager
     self.chainRunner = chainRunner
+
+    // When a chain enters/exits a confirmation gate, update the execution status
+    chainRunner.onConfirmationGateChanged = { [weak self] chainId, isEntering in
+      guard let self else { return }
+      // Find the execution that maps to this chain
+      for (executionId, cid) in self.activeChainIds where cid == chainId {
+        if let (execution, _) = self.getExecution(id: executionId) {
+          execution.status = isEntering ? .awaitingConfirmation : .running
+        }
+        break
+      }
+    }
   }
   
   /// Set the RAG store for grounding
@@ -594,6 +612,7 @@ final class ParallelWorktreeRunner {
 
   /// Mark executions stuck in non-terminal states as failed.
   /// This catches runs orphaned by app restarts or hung chains.
+  /// Executions at a confirmation gate are preserved — the user can re-run or cancel.
   private func cleanupStaleRuns() {
     let runningThreshold: TimeInterval = 45 * 60 // 45 minutes for running
     let reviewingThreshold: TimeInterval = 30 * 60 // 30 minutes for reviewing (PR review chains take ~5 min)
@@ -601,6 +620,15 @@ final class ParallelWorktreeRunner {
     for run in runs {
       var changed = false
       for execution in run.executions {
+        // Executions at a confirmation gate are intentionally paused — don't touch them.
+        // After app restart the chain is gone, so transition to awaitingReview so the user
+        // can see the partial review output and choose to re-run or cancel.
+        if execution.status == .awaitingConfirmation {
+          execution.status = .awaitingReview
+          changed = true
+          continue
+        }
+
         let isRunning = execution.status == .running || execution.status == .creatingWorktree
         let isStaleReview = execution.status == .awaitingReview
           && run.kind == .prReview
@@ -816,13 +844,20 @@ final class ParallelWorktreeRunner {
       await gate.resume()
     }
     let chainIds: [UUID] = run.executions.compactMap { execution in
-      guard execution.status == .running, let chainId = execution.chainId else { return nil }
+      guard execution.status == .running || execution.status == .awaitingConfirmation,
+            let chainId = execution.chainId else { return nil }
       return chainId
     }
     for chainId in chainIds {
       await chainRunner.resume(chainId: chainId)
     }
     recordSnapshot(for: run)
+  }
+
+  /// Advance past the confirmation gate for an execution.
+  func confirmExecution(_ execution: ParallelWorktreeExecution) async {
+    guard execution.status == .awaitingConfirmation, let chainId = execution.chainId else { return }
+    await chainRunner.resume(chainId: chainId)
   }
 
   func addGuidance(_ guidance: String, to run: ParallelWorktreeRun, executionId: UUID? = nil) {
@@ -1020,15 +1055,30 @@ final class ParallelWorktreeRunner {
       let sanitizedName = BranchNameSanitizer.sanitize(execution.task.title)
       let branchName = "parallel/\(sanitizedName)-\(timestamp)"
       
-      let worktreePath = try await workspaceService.createWorktreeForChain(
-        chainId: execution.id,
-        chainName: execution.task.title,
-        projectPath: run.projectPath,
-        branchName: branchName
-      )
+      var worktreePath: String
+      do {
+        worktreePath = try await workspaceService.createWorktreeForChain(
+          chainId: execution.id,
+          chainName: execution.task.title,
+          projectPath: run.projectPath,
+          branchName: branchName
+        )
+        execution.worktreePath = worktreePath
+        execution.branchName = branchName
+      } catch {
+        // PR reviews are read-only (GitHub API) — fall back to project path when worktree creation fails
+        if run.kind == .prReview {
+          await mcpLog.warning("Worktree creation failed for PR review, using project path: \(error.localizedDescription)", metadata: [
+            "runId": run.id.uuidString,
+            "executionId": execution.id.uuidString
+          ])
+          worktreePath = run.projectPath
+          execution.worktreePath = run.projectPath
+        } else {
+          throw error
+        }
+      }
       
-      execution.worktreePath = worktreePath
-      execution.branchName = branchName
       execution.status = .running
       PeonPingService.shared.agentStarted(name: execution.task.title)
       recordSnapshot(for: run)
@@ -1101,8 +1151,11 @@ final class ParallelWorktreeRunner {
 
       // Propagate review output to PR context when this is a PR review run
       if run.kind == .prReview {
-        run.prContext?.reviewOutput = result.output
+        // Extract the meaningful review content (after tool call logs)
+        let reviewContent = extractReviewContent(from: result.output)
+        run.prContext?.reviewOutput = reviewContent.isEmpty ? result.output : reviewContent
         run.prContext?.reviewVerdict = result.reviewVerdict?.rawValue
+          ?? inferVerdictFromOutput(result.output)
         run.prContext?.phase = PRReviewPhase.reviewed
       }
 
@@ -1160,7 +1213,45 @@ final class ParallelWorktreeRunner {
       ])
     }
   }
-  
+
+  // MARK: - PR Review Output Helpers
+
+  /// Extract the meaningful review content from agent output, stripping tool call logs.
+  /// The agent output typically starts with tool call traces (● Get details for..., └ {...}),
+  /// followed by a markdown code block with structured JSON and/or a prose summary.
+  private func extractReviewContent(from output: String) -> String {
+    let lines = output.components(separatedBy: "\n")
+    var lastStepIndex = -1
+    for (i, line) in lines.enumerated() {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("●") || trimmed.hasPrefix("•") || trimmed.hasPrefix("✗") || trimmed.hasPrefix("└") {
+        lastStepIndex = i
+      }
+    }
+    if lastStepIndex >= 0, lastStepIndex + 1 < lines.count {
+      let remaining = lines[(lastStepIndex + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+      if !remaining.isEmpty { return remaining }
+    }
+    return output
+  }
+
+  /// Infer a review verdict string from the raw output text when the chain runner didn't extract one.
+  private func inferVerdictFromOutput(_ output: String) -> String? {
+    let lowered = output.lowercased()
+    // Look for explicit verdict declarations
+    if let range = lowered.range(of: "\"verdict\"") {
+      let after = String(lowered[range.upperBound...].prefix(100))
+      if after.contains("approve") && !after.contains("request") { return "approved" }
+      if after.contains("request_changes") || after.contains("request changes") { return "needsChanges" }
+      if after.contains("comment") { return "comment" }
+    }
+    // Fallback: look for verdict in markdown
+    if lowered.contains("verdict: approve") || lowered.contains("verdict:** approve") { return "approved" }
+    if lowered.contains("verdict: request_changes") || lowered.contains("verdict:** request") { return "needsChanges" }
+    if lowered.contains("verdict: comment") || lowered.contains("verdict:** comment") { return "comment" }
+    return nil
+  }
+
   /// Build a prompt grounded with RAG snippets
   private func buildGroundedPrompt(
     for execution: ParallelWorktreeExecution,
@@ -2949,6 +3040,7 @@ final class ParallelWorktreeRunner {
   private func restoredExecutionStatus(from displayName: String, hasBranch: Bool) -> ParallelWorktreeStatus {
     switch displayName {
     case "Awaiting Review": return .awaitingReview
+    case "Awaiting Confirmation": return .awaitingReview  // Gate lost on restart → surface for re-run
     case "Reviewed":        return .reviewed
     case "Approved":        return .approved
     case "Merged":          return .merged

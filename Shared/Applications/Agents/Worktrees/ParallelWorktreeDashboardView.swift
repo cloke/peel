@@ -42,13 +42,13 @@ struct ParallelWorktreeDashboardView: View {
         Divider()
         runList(runner: runner)
       }
-      .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
+      .frame(minWidth: 180, idealWidth: 260, maxWidth: 320)
       
       // Right: Detail
       detailContent(runner: runner)
-        .frame(minWidth: 400, maxWidth: .infinity)
+        .frame(minWidth: 300, maxWidth: .infinity)
     }
-    .frame(minWidth: 700, idealWidth: 900)
+    .frame(minWidth: 500, idealWidth: 900)
     .navigationTitle("Agent Runs")
     .sheet(isPresented: $showingNewRunSheet) {
       NewParallelRunSheet(runner: runner) { run in
@@ -763,6 +763,9 @@ struct ExecutionCard: View {
     case .awaitingReview:
       Image(systemName: "eye.circle.fill")
         .foregroundStyle(.orange)
+    case .awaitingConfirmation:
+      Image(systemName: "pause.circle.fill")
+        .foregroundStyle(.yellow)
     case .reviewed:
       Image(systemName: "checkmark.circle")
         .foregroundStyle(.secondary)

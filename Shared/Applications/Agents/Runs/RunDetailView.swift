@@ -371,6 +371,9 @@ struct RunDetailView: View {
         }
         statBox(title: "Rejected", value: "\(run.rejectedCount)", color: .red)
         statBox(title: "Failed", value: "\(run.failedCount)", color: .red)
+        if run.cancelledCount > 0 {
+          statBox(title: "Cancelled", value: "\(run.cancelledCount)", color: .secondary)
+        }
         if run.hungExecutionCount > 0 {
           statBox(title: "Hung", value: "\(run.hungExecutionCount)", color: .red)
         }
@@ -421,6 +424,18 @@ struct RunDetailView: View {
   @ViewBuilder
   private var prReviewActions: some View {
     HStack(spacing: 12) {
+      // Confirmation gate: the review agent is done, waiting for user to approve posting
+      if let gateExecution = run.executions.first(where: { $0.status == .awaitingConfirmation }) {
+        Button {
+          Task { await runManager.confirmExecution(gateExecution) }
+        } label: {
+          Label("Confirm & Post Review", systemImage: "paperplane.fill")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.blue)
+        .help("Advance past the confirmation gate and post the review to GitHub")
+      }
+
       if run.isPaused {
         Button {
           Task { try? await runManager.resumeRun(run) }
@@ -428,7 +443,7 @@ struct RunDetailView: View {
           Label("Resume", systemImage: "play.fill")
         }
         .buttonStyle(.borderedProminent)
-      } else if run.status == .running {
+      } else if run.status == .running && !run.executions.contains(where: { $0.status == .awaitingConfirmation }) {
         Button {
           runManager.pauseRun(run)
         } label: {
@@ -1119,6 +1134,7 @@ struct RunDetailView: View {
     case .pending, .waitingForDependencies: "clock"
     case .creatingWorktree, .running: "circle.dotted"
     case .awaitingReview: "eye.circle.fill"
+    case .awaitingConfirmation: "pause.circle.fill"
     case .reviewed: "checkmark.circle"
     case .approved: "checkmark.circle.fill"
     case .conflicted: "exclamationmark.triangle.fill"
@@ -1135,6 +1151,7 @@ struct RunDetailView: View {
     case .pending, .waitingForDependencies, .cancelled: .secondary
     case .creatingWorktree, .running, .merging: .blue
     case .awaitingReview: .orange
+    case .awaitingConfirmation: .yellow
     case .reviewed: .purple
     case .approved, .merged: .green
     case .conflicted: .orange

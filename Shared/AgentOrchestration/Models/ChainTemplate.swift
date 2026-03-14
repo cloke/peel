@@ -517,7 +517,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         description: "Review pull request and provide feedback (Cost: Standard)",
         steps: [
           AgentStepTemplate(
-            role: .planner,
+            role: .reviewer,
             model: .bestStandard,
             name: "PR Reviewer",
             customInstructions: """
@@ -547,13 +547,21 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
                  - Missing error handling or test coverage
                  - Style consistency with the rest of the codebase
 
-              7. **Produce a structured review** with:
-                 - **Summary**: What the PR does in 1-2 sentences
-                 - **Risk Assessment**: Low / Medium / High with reasoning
-                 - **Issues Found**: Numbered list with severity and file/line references
-                 - **Suggestions**: Improvements that aren't blocking
-                 - **CI Status**: Pass/fail summary
-                 - **Verdict**: APPROVE, REQUEST_CHANGES, or COMMENT with reasoning
+              7. **Return ONLY valid JSON** (no markdown, no code fences) with this exact schema:
+
+              ```
+              {
+                "summary": "1-2 sentence description of what the PR does",
+                "riskLevel": "low" | "medium" | "high",
+                "issues": [
+                  {"severity": "high|medium|low", "description": "Issue description with file:line references"}
+                ],
+                "suggestions": ["Suggestion 1", "Suggestion 2"],
+                "ciStatus": "12/12 checks passing" or similar,
+                "verdict": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
+                "verdictReasoning": "Why this verdict"
+              }
+              ```
 
               Be constructive—focus on actionable, specific feedback. Reference exact file paths and line numbers.
               """

@@ -524,6 +524,10 @@ struct InlineExecutionCard: View {
       Image(systemName: "eye.circle.fill")
         .foregroundStyle(.orange)
         .frame(width: 16)
+    case .awaitingConfirmation:
+      Image(systemName: "pause.circle.fill")
+        .foregroundStyle(.yellow)
+        .frame(width: 16)
     case .reviewed:
       Image(systemName: "checkmark.circle")
         .foregroundStyle(.secondary)

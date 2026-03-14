@@ -555,7 +555,13 @@ extension ChainToolsHandler {
             "timeoutSeconds": ["type": "number"],
             "returnImmediately": ["type": "boolean"],
             "keepWorkspace": ["type": "boolean"],
-            "requireRagUsage": ["type": "boolean"]
+            "requireRagUsage": ["type": "boolean"],
+            "prNumber": ["type": "integer", "description": "PR number for PR review runs"],
+            "prTitle": ["type": "string", "description": "PR title for PR review runs"],
+            "prRepoOwner": ["type": "string", "description": "Repository owner for PR review runs"],
+            "prRepoName": ["type": "string", "description": "Repository name for PR review runs"],
+            "prHeadRef": ["type": "string", "description": "PR head branch ref"],
+            "prHtmlURL": ["type": "string", "description": "PR HTML URL"]
           ],
           "required": ["prompt"]
         ],

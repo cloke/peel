@@ -119,6 +119,10 @@ public final class AgentChainRunner {
   private var vmChainExecutor: VMChainExecutor?
   private let vmIsolationService: VMIsolationService?
 
+  /// Called when a chain enters/exits a confirmation gate.
+  /// The closure receives (chainId, isEntering). `true` = entered gate, `false` = exited.
+  public var onConfirmationGateChanged: ((UUID, Bool) -> Void)?
+
   public init(
     agentManager: AgentManager,
     cliService: CLIService,
@@ -1241,12 +1245,18 @@ public final class AgentChainRunner {
     chain.state = .awaitingConfirmation(stepIndex: index)
     chain.addStatusMessage("⏸ \(agent.name): \(description)", type: .info)
 
+    // Notify listener that this chain is now at a confirmation gate
+    onConfirmationGateChanged?(chain.id, true)
+
     // Pause via the ChainRunGate — user must call resume(chainId:) to continue
     guard let gate = runGates[chain.id] else {
       throw ChainError.configurationError("No run gate found for chain '\(chain.id)' — confirmation gate must run inside a chain")
     }
     await gate.pause()
     await gate.waitIfPaused()
+
+    // Notify listener that the chain exited the confirmation gate
+    onConfirmationGateChanged?(chain.id, false)
 
     let duration = Date().timeIntervalSince(startTime)
     let durationStr = String(format: "%.1fs", duration)
@@ -1638,6 +1648,10 @@ public final class AgentChainRunner {
 
       var verdict: ReviewVerdict?
       if agent.role == .reviewer {
+        verdict = ReviewVerdict.parse(from: response.content)
+      }
+      // PR Review templates use a planner-role step that also produces a verdict
+      if verdict == nil, agent.name.lowercased().contains("reviewer") {
         verdict = ReviewVerdict.parse(from: response.content)
       }
 
