@@ -888,9 +888,9 @@ public final class SwarmCoordinator {
           if !peer.hasDeviceId {
             if let match = FirebaseService.shared.swarmWorkers.first(where: { $0.deviceName == peer.name }) {
               effectivePeerId = match.id
-              self.logger.info("LAN reconnect: resolved \(peer.name, privacy: .public) to Firestore UUID \(match.id.prefix(8), privacy: .public)")
+              self.logger.notice("LAN reconnect: resolved \(peer.name, privacy: .public) → Firestore UUID \(match.id.prefix(8), privacy: .public)")
             } else {
-              self.logger.info("LAN reconnect: skipping \(peer.name, privacy: .public) — no TXT deviceId and no Firestore match")
+              self.logger.notice("LAN reconnect: skipping \(peer.name, privacy: .public) — no TXT deviceId and no Firestore match")
               continue
             }
           } else {
@@ -913,7 +913,7 @@ public final class SwarmCoordinator {
             continue
           }
 
-          self.logger.info("LAN reconnect: retrying \(peer.name, privacy: .public) (\(effectivePeerId.prefix(8), privacy: .public)), attempt \(failures + 1)")
+          self.logger.notice("LAN reconnect: retrying \(peer.name, privacy: .public) (\(effectivePeerId.prefix(8), privacy: .public)), attempt \(failures + 1)")
           Task {
             do {
               try await self.connectToWorker(peerId: effectivePeerId)
