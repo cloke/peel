@@ -2177,7 +2177,7 @@ public final class SwarmCoordinator {
   }
 
   /// Wait for a RAG transfer to reach a terminal state (.complete or .failed).
-  public func waitForTransferCompletion(_ id: UUID, timeout: Duration = .seconds(300)) async throws -> RAGArtifactTransferState {
+  public func waitForTransferCompletion(_ id: UUID, timeout: Duration = .seconds(600)) async throws -> RAGArtifactTransferState {
     let deadline = ContinuousClock.now + timeout
     while ContinuousClock.now < deadline {
       if let state = ragTransfers.first(where: { $0.id == id }) {
