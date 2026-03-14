@@ -888,24 +888,25 @@ public final class SwarmCoordinator {
           // resolve via Firestore worker list (match by hostname or prefix).
           let effectivePeerId: String
           if !peer.hasDeviceId {
+            let workers = FirebaseService.shared.swarmWorkers
             // Try exact deviceName match first
-            if let match = FirebaseService.shared.swarmWorkers.first(where: { $0.deviceName == peer.name }) {
+            if let match = workers.first(where: { $0.deviceName == peer.name }) {
               effectivePeerId = match.id
             }
             // Try prefix match for IPv6-based hostnames that change suffix on new networks
             // e.g. "syn-2600-6c5e-467f-34de-XXXX" matches even if XXXX differs
             else if let prefix = peer.name.split(separator: ".").first,
                     prefix.count > 16,
-                    let match = FirebaseService.shared.swarmWorkers.first(where: {
+                    let match = workers.first(where: {
                       guard let workerPrefix = $0.deviceName.split(separator: ".").first else { return false }
-                      // Match on first 20 chars of the hostname (stable part of IPv6 SLAAC)
                       let matchLen = min(20, min(prefix.count, workerPrefix.count))
                       return prefix.prefix(matchLen) == workerPrefix.prefix(matchLen)
                     }) {
               effectivePeerId = match.id
               self.logger.notice("LAN reconnect: prefix-matched \(peer.name.prefix(30), privacy: .public) → \(match.displayName, privacy: .public) (\(match.id.prefix(8), privacy: .public))")
             } else {
-              self.logger.notice("LAN reconnect: skipping \(peer.name, privacy: .public) — no TXT deviceId and no Firestore match")
+              let workerNames = workers.map { "\($0.deviceName.prefix(25))" }.joined(separator: ", ")
+              self.logger.notice("LAN reconnect: skipping \(peer.name.prefix(40), privacy: .public) — no match in \(workers.count) workers: [\(workerNames, privacy: .public)]")
               continue
             }
           } else {
@@ -2963,34 +2964,36 @@ extension SwarmCoordinator {
 
 extension SwarmCoordinator: BonjourDiscoveryDelegate {
   public func discoveryService(_ service: BonjourDiscoveryService, didDiscover peer: DiscoveredPeer) {
-    // Auto-connect to discovered peers regardless of role.
-    // Workers need to connect to brains, and brains to workers.
-    // Both sides run a TCP listener, so either can initiate.
-    
     // Skip if already connected AND has recent heartbeat
     if connectedWorkers.contains(where: { $0.id == peer.id }) {
-      // Check if the worker has a recent heartbeat (not stale)
       if let status = workerStatuses[peer.id] {
         let age = Date().timeIntervalSince(status.lastHeartbeat)
         if age < heartbeatStaleThreshold {
-          // Connection is healthy, skip
           return
         }
-        // Connection seems stale, let it try to reconnect
         logger.info("Discovered peer \(peer.name) but existing connection is stale (\(Int(age))s since heartbeat), allowing reconnect")
       } else {
-        // No status yet but in connected list - might be mid-handshake, skip
         return
       }
     }
-    
-    logger.info("Discovered peer: \(peer.name), initiating WebRTC session...")
-    
+
+    // If the TXT record hasn't delivered the real deviceId yet, skip this
+    // immediate connect. The LAN reconnect loop resolves the Bonjour
+    // hostname → Firestore worker UUID and handles connection with the
+    // correct peerId. Connecting with the raw hostname creates a session
+    // that can't be matched to the Firestore signaling path.
+    guard peer.hasDeviceId else {
+      logger.info("Discovered peer: \(peer.name, privacy: .public) — deferring to LAN reconnect (no deviceId yet)")
+      return
+    }
+
+    logger.info("Discovered peer: \(peer.name, privacy: .public), initiating WebRTC session...")
+
     Task {
       do {
         try await self.connectToWorker(peerId: peer.id)
       } catch {
-        logger.error("Failed to connect to discovered peer \(peer.name): \(error)")
+        logger.error("Failed to connect to discovered peer \(peer.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
       }
     }
   }
