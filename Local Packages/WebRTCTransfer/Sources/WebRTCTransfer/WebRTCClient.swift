@@ -23,19 +23,34 @@ public final class WebRTCClient: NSObject, Sendable {
 
   /// STUN/TURN servers for ICE candidate gathering.
   /// Includes STUN for direct connectivity discovery and TURN for relay fallback.
+  /// Multiple providers for resilience — some networks block specific servers.
   public static let defaultICEServers: [RTCIceServer] = [
-    // Google STUN servers (free, for NAT discovery only)
+    // Google STUN + Cloudflare STUN (free, for NAT discovery only)
     RTCIceServer(urlStrings: [
       "stun:stun.l.google.com:19302",
       "stun:stun1.l.google.com:19302",
+      "stun:stun.cloudflare.com:3478",
     ]),
     // Metered.ca Open Relay TURN servers (free tier, 20GB/month)
-    // Provides relay fallback when direct/STUN paths fail (symmetric NAT, firewalls)
+    // Multiple ports for firewall bypass
     RTCIceServer(
       urlStrings: [
         "turn:openrelay.metered.ca:80",
         "turn:openrelay.metered.ca:443",
+        "turn:openrelay.metered.ca:443?transport=tcp",
         "turns:openrelay.metered.ca:443",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    ),
+    // Metered.ca global relay (same credentials, different endpoint)
+    RTCIceServer(
+      urlStrings: [
+        "turn:global.relay.metered.ca:80",
+        "turn:global.relay.metered.ca:80?transport=tcp",
+        "turn:global.relay.metered.ca:443",
+        "turn:global.relay.metered.ca:443?transport=tcp",
+        "turns:global.relay.metered.ca:443",
       ],
       username: "openrelayproject",
       credential: "openrelayproject"
