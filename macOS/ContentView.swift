@@ -62,6 +62,7 @@ struct ContentView: View {
   @AppStorage(wrappedValue: .repositories, "current-tool") private var currentSection: CurrentTool
   @AppStorage("feature.showBrew") private var showBrew = false
   @AppStorage("onboarding.checklistDismissed") private var checklistDismissed = false
+  @AppStorage("onboarding.completed") private var onboardingCompleted = false
   @AppStorage("repositories.selectedRepoKey") private var automationSelectedRepoKey = ""
   @AppStorage("repositories.searchText") private var automationRepoSearchText = ""
 
@@ -79,6 +80,7 @@ struct ContentView: View {
   @State private var showAddRepoSheet = false
   @State private var showingInvitePreview = false
   @State private var showChecklist = false
+  @State private var showOnboarding = false
   @State private var showCommandPalette = false
   @State private var activeLabFeature: LabFeature?
 
@@ -120,7 +122,11 @@ struct ContentView: View {
       persistRepositoryAutomationState()
       syncRepoSelectionFromAutomation()
       syncSelectionToSection()
-      if !checklistDismissed { showChecklist = true }
+      if !onboardingCompleted {
+        showOnboarding = true
+      } else if !checklistDismissed {
+        showChecklist = true
+      }
     }
     .onChange(of: currentSection) { _, newValue in
       migrateLegacySection(newValue)
@@ -196,6 +202,9 @@ struct ContentView: View {
     }
     .sheet(isPresented: $showChecklist) {
       FeatureDiscoveryChecklistView()
+    }
+    .sheet(isPresented: $showOnboarding) {
+      OnboardingWizardView()
     }
     .sheet(item: $activeLabFeature) { feature in
       LabFeatureSheetContent(feature: feature)
