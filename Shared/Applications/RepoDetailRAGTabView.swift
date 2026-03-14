@@ -456,6 +456,11 @@ struct RAGTabView: View {
     liveRagRepos.compactMap(\.lastIndexedAt).max()
   }
 
+  /// All root paths for repos in this tracked repo group (parent + sub-packages).
+  private var allRepoPaths: [String] {
+    liveRagRepos.map(\.rootPath)
+  }
+
   // MARK: - Lessons Section
 
   private var lessonsSection: some View {
@@ -1151,6 +1156,20 @@ struct RAGTabView: View {
       }
       Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
 
+    case "repositories.rag.analyze":
+      if mcpServer.lastUIAction?.controlId == controlId {
+        mcpServer.recordUIActionHandled(controlId)
+        mcpServer.lastUIAction = nil
+      }
+      Task { await analyzeChunks() }
+
+    case "repositories.rag.enrich":
+      if mcpServer.lastUIAction?.controlId == controlId {
+        mcpServer.recordUIActionHandled(controlId)
+        mcpServer.lastUIAction = nil
+      }
+      Task { await enrichEmbeddings() }
+
     default:
       break
     }
@@ -1247,23 +1266,32 @@ struct RAGTabView: View {
   }
 
   private func refreshAnalysisStatus() async {
-    guard let path = repo.localPath else { return }
+    guard repo.localPath != nil else { return }
+    let paths = allRepoPaths
+    guard !paths.isEmpty else { return }
     do {
-      let unanalyzed = try await mcpServer.getUnanalyzedChunkCount(repoPath: path)
-      let analyzed = try await mcpServer.getAnalyzedChunkCount(repoPath: path)
-      let enriched = try await mcpServer.getEnrichedChunkCount(repoPath: path)
-      if let state = analysisState {
-        state.unanalyzedCount = unanalyzed
-        state.analyzedCount = analyzed
+      var totalUnanalyzed = 0
+      var totalAnalyzed = 0
+      var totalEnriched = 0
+      for path in paths {
+        totalUnanalyzed += try await mcpServer.getUnanalyzedChunkCount(repoPath: path)
+        totalAnalyzed += try await mcpServer.getAnalyzedChunkCount(repoPath: path)
+        totalEnriched += try await mcpServer.getEnrichedChunkCount(repoPath: path)
       }
-      enrichedChunks = enriched
+      if let state = analysisState {
+        state.unanalyzedCount = totalUnanalyzed
+        state.analyzedCount = totalAnalyzed
+      }
+      enrichedChunks = totalEnriched
     } catch {
       // Non-critical
     }
   }
 
   private func analyzeChunks() async {
-    guard let path = repo.localPath else { return }
+    guard repo.localPath != nil else { return }
+    let paths = allRepoPaths
+    guard !paths.isEmpty else { return }
     isAnalyzing = true
     analyzeError = nil
     analyzeSuccess = nil
@@ -1273,36 +1301,37 @@ struct RAGTabView: View {
     state?.analysisStartTime = Date()
     let batchStart = Date()
     do {
-      let count = try await mcpServer.analyzeRagChunks(
-        repoPath: path,
-        limit: 500
-      ) { current, total in
-        Task { @MainActor in
-          state?.batchProgress = (current, total)
+      var totalCount = 0
+      var remaining = 500
+      for path in paths where remaining > 0 {
+        let count = try await mcpServer.analyzeRagChunks(
+          repoPath: path,
+          limit: remaining
+        ) { current, total in
+          Task { @MainActor in
+            state?.batchProgress = (current, total)
+          }
         }
+        totalCount += count
+        remaining -= count
       }
-      analyzedChunks = count
-      if count == 0 {
+      analyzedChunks = totalCount
+      if totalCount == 0 {
         let totalAnalyzed = state?.analyzedCount ?? 0
         if totalAnalyzed > 0 {
-          let repoTotal = liveChunkCount ?? 0
-          if repoTotal > 0, totalAnalyzed < repoTotal {
-            analyzeSuccess = "\(totalAnalyzed) of \(repoTotal) chunks analyzed — no more to analyze"
-          } else {
-            analyzeSuccess = "All \(totalAnalyzed) chunks already analyzed"
-          }
+          analyzeSuccess = "All \(totalAnalyzed) chunks already analyzed"
         } else {
           analyzeSuccess = "No chunks to analyze — index first"
         }
       } else {
-        analyzeSuccess = "Analyzed \(count) chunks"
+        analyzeSuccess = "Analyzed \(totalCount) chunks"
       }
       if let state {
-        state.analyzedCount += count
-        state.unanalyzedCount = max(0, state.unanalyzedCount - count)
+        state.analyzedCount += totalCount
+        state.unanalyzedCount = max(0, state.unanalyzedCount - totalCount)
         let elapsed = Date().timeIntervalSince(batchStart)
-        if elapsed > 0, count > 0 {
-          state.chunksPerSecond = Double(count) / elapsed
+        if elapsed > 0, totalCount > 0 {
+          state.chunksPerSecond = Double(totalCount) / elapsed
         }
       }
     } catch {
@@ -1317,35 +1346,41 @@ struct RAGTabView: View {
   }
 
   private func enrichEmbeddings() async {
-    guard let path = repo.localPath else { return }
+    guard repo.localPath != nil else { return }
+    let paths = allRepoPaths
+    guard !paths.isEmpty else { return }
     isEnriching = true
     enrichError = nil
     enrichResult = nil
     enrichBatchProgress = nil
     do {
-      let count = try await mcpServer.enrichRagEmbeddings(
-        repoPath: path,
-        limit: 500
-      ) { current, total in
-        Task { @MainActor in
-          enrichBatchProgress = (current: current, total: total)
-        }
-      }
-      enrichedChunks = count
-      if count == 0 {
-        let analyzedCount = (try? await mcpServer.getAnalyzedChunkCount(repoPath: path)) ?? 0
-        if analyzedCount > 0 {
-          let repoTotal = liveChunkCount ?? 0
-          if repoTotal > 0, analyzedCount < repoTotal {
-            enrichResult = "All \(analyzedCount) analyzed chunks enriched (\(analyzedCount) of \(repoTotal) total)"
-          } else {
-            enrichResult = "All \(analyzedCount) analyzed chunks already enriched"
+      var totalCount = 0
+      var remaining = 500
+      for path in paths where remaining > 0 {
+        let count = try await mcpServer.enrichRagEmbeddings(
+          repoPath: path,
+          limit: remaining
+        ) { current, total in
+          Task { @MainActor in
+            enrichBatchProgress = (current: current, total: total)
           }
+        }
+        totalCount += count
+        remaining -= count
+      }
+      enrichedChunks = totalCount
+      if totalCount == 0 {
+        var totalAnalyzed = 0
+        for path in paths {
+          totalAnalyzed += (try? await mcpServer.getAnalyzedChunkCount(repoPath: path)) ?? 0
+        }
+        if totalAnalyzed > 0 {
+          enrichResult = "All \(totalAnalyzed) analyzed chunks already enriched"
         } else {
           enrichResult = "No analyzed chunks found — run Analyze first"
         }
       } else {
-        enrichResult = "Enriched \(count) chunks"
+        enrichResult = "Enriched \(totalCount) chunks"
       }
       await refreshAnalysisStatus()
     } catch {
