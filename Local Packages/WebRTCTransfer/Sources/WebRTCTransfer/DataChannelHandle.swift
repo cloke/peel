@@ -235,7 +235,8 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
   private static let bufferHighWaterMark: UInt64 = 256 * 1024
   private static let bufferLowWaterMark: UInt64 = 64 * 1024
   private static let bufferDrainTimeout: Duration = .seconds(10)
-  private static let maxBufferDrainWaits = 3
+  // Allow more retries since each poll is only 2s (total ceiling ~60s)
+  private static let maxBufferDrainWaits = 30
 
   /// Send binary data with backpressure.
   public func send(_ data: Data) async throws {
@@ -250,35 +251,42 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
 
       logger.debug("[DCH-\(self.label)] send backpressure wait \(drainWaits) buffered=\(buffered)")
 
+      // Wait for either the low-water callback or a polling timeout.
+      // The onBufferDrained callback only fires at ≤ bufferLowWaterMark,
+      // so we use a short poll interval and re-check the high water mark.
       let drained = (try? await withThrowingTaskGroup(of: Bool.self) { group in
         group.addTask {
           try await self.state.waitForBufferDrain()
           return true
         }
         group.addTask {
-          try await Task.sleep(for: Self.bufferDrainTimeout)
+          try await Task.sleep(for: .seconds(2))
           return false
         }
         defer { group.cancelAll() }
         return try await group.next() ?? false
       }) ?? false
 
-      guard drained else {
+      if !drained {
+        // Timeout — but the buffer may have partially drained.
+        // Re-check: the while loop condition will handle it.
         let stillBuffered = channel.bufferedAmount
-        let state = String(describing: channel.readyState)
-        logger.error(
-          "[DCH-\(self.label)] buffer drain timeout buffered=\(stillBuffered) readyState=\(state), failing send"
-        )
         if channel.readyState == .closed {
           throw WebRTCError.dataChannelClosed
         }
-        throw WebRTCError.transferFailed(reason: "Data channel backpressure timeout on '\(label)'")
+        if stillBuffered <= Self.bufferHighWaterMark {
+          logger.debug("[DCH-\(self.label)] buffer drained to \(stillBuffered) after poll timeout — proceeding")
+          break
+        }
+        logger.debug("[DCH-\(self.label)] buffer still at \(stillBuffered) after poll, retrying")
       }
 
       guard drainWaits < Self.maxBufferDrainWaits else {
         let stillBuffered = channel.bufferedAmount
+        // Final check: if buffer actually drained, don't fail
+        if stillBuffered <= Self.bufferHighWaterMark { break }
         logger.error("[DCH-\(self.label)] excessive backpressure waits buffered=\(stillBuffered), failing send")
-        throw WebRTCError.transferFailed(reason: "Data channel remained backpressured on '\(label)'")
+        throw WebRTCError.transferFailed(reason: "Data channel backpressure timeout on '\(label)'")
       }
     }
 
