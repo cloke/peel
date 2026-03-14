@@ -717,6 +717,185 @@ extension SwarmToolsHandler {
         category: .swarm,
         isMutating: true
       ),
+
+      // MARK: - Remote MCP Tool Proxy (#376)
+
+      MCPToolDefinition(
+        name: "swarm.remote-tool-call",
+        description: "Execute an MCP tool on a remote connected peer via WebRTC. The target peer must have a RemoteToolPolicy granting access to the requested tool. Returns the tool's JSON-RPC result. Security: default-deny, rate-limited, audit-logged.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "toolName": [
+              "type": "string",
+              "description": "The MCP tool name to execute on the remote peer (e.g. 'rag.search', 'swarm.status')"
+            ],
+            "arguments": [
+              "type": "object",
+              "description": "Arguments to pass to the remote tool (same schema as calling it locally)"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Target worker device ID. If omitted, uses first connected worker."
+            ],
+            "workerName": [
+              "type": "string",
+              "description": "Target worker display name (case-insensitive). Alternative to workerId."
+            ],
+            "agentRole": [
+              "type": "string",
+              "description": "Optional: the calling agent's personality role (for audit trail)"
+            ],
+            "timeout": [
+              "type": "integer",
+              "description": "Timeout in seconds (default: 30, max: 300)"
+            ]
+          ],
+          "required": ["toolName"]
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+
+      MCPToolDefinition(
+        name: "swarm.remote-tool-audit",
+        description: "View the audit log of remote MCP tool calls received or sent by this peer. Shows caller, tool, success/failure, and timing.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "limit": [
+              "type": "integer",
+              "description": "Maximum entries to return (default: 50)"
+            ],
+            "peerId": [
+              "type": "string",
+              "description": "Filter by specific peer ID"
+            ],
+            "toolName": [
+              "type": "string",
+              "description": "Filter by specific tool name"
+            ]
+          ]
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+
+      MCPToolDefinition(
+        name: "swarm.remote-tool-policy",
+        description: "Manage remote tool access policies for connected peers. Actions: 'list' (show all policies), 'get' (show policy for a peer), 'set' (create/update policy for a peer).",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "action": [
+              "type": "string",
+              "enum": ["list", "get", "set"],
+              "description": "The action to perform"
+            ],
+            "peerId": [
+              "type": "string",
+              "description": "Peer device ID (required for 'get' and 'set')"
+            ],
+            "peerName": [
+              "type": "string",
+              "description": "Display name for the peer (used when creating new policies)"
+            ],
+            "allowedTools": [
+              "type": "string",
+              "description": "Comma-separated list of allowed tool names. Use '*' for all non-sensitive tools. Required for 'set'."
+            ],
+            "allowSensitiveTools": [
+              "type": "boolean",
+              "description": "Whether to allow sensitive tools (terminal.run, code.edit, etc.). Default: false."
+            ],
+            "maxRequestsPerMinute": [
+              "type": "integer",
+              "description": "Rate limit for this peer (default: 60)"
+            ],
+            "isActive": [
+              "type": "boolean",
+              "description": "Whether this policy is active (default: true)"
+            ]
+          ],
+          "required": ["action"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+
+      // MARK: - Agent Personalities (#383)
+
+      MCPToolDefinition(
+        name: "swarm.agent-personalities",
+        description: "List all available agent personalities. Shows built-in and custom personalities with their roles, expertise, and collaboration styles.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "role": [
+              "type": "string",
+              "description": "Filter by role (e.g. 'planner', 'implementer', 'reviewer')"
+            ],
+            "activeOnly": [
+              "type": "boolean",
+              "description": "Only show active personalities (default: true)"
+            ]
+          ]
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+
+      MCPToolDefinition(
+        name: "swarm.agent-personality.create",
+        description: "Create a new custom agent personality with specific role, expertise, tool access, and behavioral directives.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "slug": [
+              "type": "string",
+              "description": "Short identifier (e.g. 'frontend-specialist', 'data-engineer')"
+            ],
+            "name": [
+              "type": "string",
+              "description": "Display name for this personality"
+            ],
+            "role": [
+              "type": "string",
+              "enum": ["planner", "implementer", "reviewer", "security-auditor", "devops", "custom"],
+              "description": "Role category for routing and collaboration"
+            ],
+            "systemPrompt": [
+              "type": "string",
+              "description": "System prompt defining this agent's personality, expertise, and behavioral directives"
+            ],
+            "expertiseTags": [
+              "type": "string",
+              "description": "Comma-separated expertise tags (e.g. 'swift,ui,accessibility')"
+            ],
+            "allowedTools": [
+              "type": "string",
+              "description": "Comma-separated allowed tool names. Empty = all non-sensitive. '*' = unrestricted."
+            ],
+            "deniedTools": [
+              "type": "string",
+              "description": "Comma-separated denied tool names (overrides allowed)"
+            ],
+            "collaborationStyle": [
+              "type": "string",
+              "enum": ["autonomous", "collaborative", "supervisory", "reactive"],
+              "description": "How this agent interacts with others"
+            ],
+            "preferredModelTier": [
+              "type": "string",
+              "enum": ["premium", "standard", "economy"],
+              "description": "Preferred LLM model tier for cost optimization"
+            ]
+          ],
+          "required": ["slug", "name", "role", "systemPrompt"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
     ]
   }
 }

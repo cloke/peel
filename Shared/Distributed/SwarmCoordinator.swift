@@ -135,6 +135,18 @@ public final class SwarmCoordinator {
   /// Pending direct command waiters (for awaiting results)
   private var pendingDirectCommands: [UUID: AsyncStream<DirectCommandResult>.Continuation] = [:]
 
+  // MARK: - Remote Tool Call State
+
+  /// Pending remote tool call waiters (caller side — waiting for result from target peer)
+  private var pendingRemoteToolCalls: [UUID: AsyncStream<RemoteToolCallResult>.Continuation] = [:]
+
+  /// Rate limiting: tracks request timestamps per peer for sliding window enforcement
+  private var remoteToolCallTimestamps: [String: [Date]] = [:]
+
+  /// Audit log of remote tool call invocations (newest first, capped)
+  public private(set) var remoteToolCallAuditLog: [RemoteToolCallAuditEntry] = []
+  private let maxAuditLogEntries = 200
+
   /// Recent message trace for diagnostics (newest first)
   public private(set) var messageTrace: [(date: Date, direction: String, peerId: String, type: String, detail: String)] = []
   private let maxTraceEntries = 80
@@ -321,6 +333,10 @@ public final class SwarmCoordinator {
   
   /// Chain executor for worker mode
   private var chainExecutor: ChainExecutorProtocol?
+
+  /// Closure for executing MCP tool calls locally (injected by MCPServerService).
+  /// Used by the remote tool proxy to execute tools on behalf of remote peers.
+  public var localToolExecutor: ((String, [String: Any]) async -> (Int, Data))?
   
   /// Worktree manager for isolated task execution
   private var _worktreeManager: SwarmWorktreeManager?
@@ -2603,6 +2619,244 @@ public final class SwarmCoordinator {
       await performSelfRestart()
     }
   }
+
+  // MARK: - Remote Tool Call Handling
+
+  /// Handle an incoming remote tool call from a peer (receiving/executing side).
+  /// Validates authorization via RemoteToolPolicy, enforces rate limits, executes the tool,
+  /// and sends the result back to the caller.
+  private func handleRemoteToolCall(_ request: RemoteToolCallRequest, from peerId: String) async {
+    let startTime = Date()
+
+    // 1. Replay protection: reject requests older than 30 seconds
+    let age = Date().timeIntervalSince(request.timestamp)
+    if age > 30 || age < -5 {
+      logger.warning("Remote tool call \(request.id) from \(peerId) rejected: timestamp too old (\(Int(age))s)")
+      let result = RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "Request expired (age: \(Int(age))s, max: 30s)", errorCode: -32001)
+      try? await sendMessage(.remoteToolResult(result: result), to: peerId)
+      recordAuditEntry(request: request, peerId: peerId, success: false, errorMessage: "expired", durationMs: 0)
+      return
+    }
+
+    // 2. Verify caller device ID matches the authenticated WebRTC peer
+    if request.callerDeviceId != peerId {
+      logger.warning("Remote tool call \(request.id): caller device ID mismatch (\(request.callerDeviceId) vs peer \(peerId))")
+      let result = RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "Caller device ID does not match authenticated peer", errorCode: -32003)
+      try? await sendMessage(.remoteToolResult(result: result), to: peerId)
+      recordAuditEntry(request: request, peerId: peerId, success: false, errorMessage: "auth mismatch", durationMs: 0)
+      return
+    }
+
+    // 3. Rate limiting: sliding window check
+    let now = Date()
+    var timestamps = remoteToolCallTimestamps[peerId] ?? []
+    timestamps.removeAll { now.timeIntervalSince($0) > 60 }
+    let rateLimit = await getRemoteToolRateLimit(for: peerId)
+    if timestamps.count >= rateLimit {
+      logger.warning("Remote tool call \(request.id) from \(peerId) rate limited (\(timestamps.count)/\(rateLimit) per minute)")
+      let result = RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "Rate limit exceeded (\(rateLimit) requests/minute)", errorCode: -32005)
+      try? await sendMessage(.remoteToolResult(result: result), to: peerId)
+      recordAuditEntry(request: request, peerId: peerId, success: false, errorMessage: "rate limited", durationMs: 0)
+      return
+    }
+    timestamps.append(now)
+    remoteToolCallTimestamps[peerId] = timestamps
+
+    // 4. Authorization: check RemoteToolPolicy allowlist
+    let authorized = await isToolAuthorized(request.toolName, for: peerId)
+    if !authorized {
+      logger.warning("Remote tool call \(request.id): tool '\(request.toolName)' not authorized for peer \(peerId)")
+      let result = RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "Tool '\(request.toolName)' is not authorized for this peer", errorCode: -32004)
+      try? await sendMessage(.remoteToolResult(result: result), to: peerId)
+      recordAuditEntry(request: request, peerId: peerId, success: false, errorMessage: "unauthorized", durationMs: 0)
+      return
+    }
+
+    // 5. Parse arguments from JSON
+    guard let argumentsData = request.argumentsJSON.data(using: .utf8),
+          let arguments = try? JSONSerialization.jsonObject(with: argumentsData) as? [String: Any] else {
+      let result = RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "Invalid arguments JSON", errorCode: -32602)
+      try? await sendMessage(.remoteToolResult(result: result), to: peerId)
+      recordAuditEntry(request: request, peerId: peerId, success: false, errorMessage: "bad args", durationMs: 0)
+      return
+    }
+
+    // 6. Execute the tool locally via injected localToolExecutor
+    guard let executor = localToolExecutor else {
+      logger.error("Remote tool call \(request.id): no localToolExecutor configured")
+      let result = RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "MCP server not configured for remote tool execution", errorCode: -32000)
+      try? await sendMessage(.remoteToolResult(result: result), to: peerId)
+      recordAuditEntry(request: request, peerId: peerId, success: false, errorMessage: "no executor", durationMs: 0)
+      return
+    }
+
+    logger.info("Executing remote tool call \(request.id): \(request.toolName) from peer \(peerId)")
+    let (statusCode, responseData) = await executor(request.toolName, arguments)
+    let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+
+    // 7. Build and send result
+    let success = (200...299).contains(statusCode)
+    let resultJSON = String(data: responseData, encoding: .utf8)
+    let result = RemoteToolCallResult(
+      requestId: request.id,
+      success: success,
+      resultJSON: resultJSON,
+      errorMessage: success ? nil : "Tool returned status \(statusCode)",
+      errorCode: success ? nil : statusCode,
+      durationMs: durationMs
+    )
+
+    do {
+      try await sendMessage(.remoteToolResult(result: result), to: peerId)
+    } catch {
+      logger.error("Failed to send remoteToolResult for \(request.id) to \(peerId): \(error)")
+    }
+
+    recordAuditEntry(request: request, peerId: peerId, success: success, errorMessage: success ? nil : "status \(statusCode)", durationMs: durationMs)
+    logger.info("Remote tool call \(request.id) completed: \(request.toolName) success=\(success) duration=\(durationMs)ms")
+  }
+
+  /// Send a remote tool call to a peer and wait for the result.
+  public func sendRemoteToolCallAndWait(
+    toolName: String,
+    arguments: [String: Any],
+    to workerId: String,
+    agentRole: String? = nil,
+    timeout: Duration = .seconds(30)
+  ) async throws -> RemoteToolCallResult {
+    guard role == .brain || role == .hybrid else {
+      throw DistributedError.actorSystemNotReady
+    }
+
+    let argumentsJSON: String
+    do {
+      let data = try JSONSerialization.data(withJSONObject: arguments)
+      argumentsJSON = String(data: data, encoding: .utf8) ?? "{}"
+    } catch {
+      throw DistributedError.serializationFailed(reason: "Failed to encode arguments: \(error)")
+    }
+
+    let request = RemoteToolCallRequest(
+      toolName: toolName,
+      argumentsJSON: argumentsJSON,
+      callerDeviceId: capabilities.deviceId,
+      callerAgentRole: agentRole
+    )
+
+    logger.info("Sending remote tool call \(request.id): \(toolName) to \(workerId)")
+
+    let responseStream = AsyncStream<RemoteToolCallResult>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      pendingRemoteToolCalls[request.id] = continuation
+    }
+
+    defer {
+      if let waiter = pendingRemoteToolCalls.removeValue(forKey: request.id) {
+        waiter.finish()
+      }
+    }
+
+    do {
+      try await sendMessage(.remoteToolCall(request: request), to: workerId)
+    } catch {
+      return RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "Failed to send request: \(error.localizedDescription)", errorCode: -32000)
+    }
+
+    return try await withThrowingTaskGroup(of: RemoteToolCallResult.self) { group in
+      group.addTask {
+        var iterator = responseStream.makeAsyncIterator()
+        guard let result = await iterator.next() else {
+          return RemoteToolCallResult(
+            requestId: request.id, success: false,
+            errorMessage: "Cancelled", errorCode: -32000)
+        }
+        return result
+      }
+      group.addTask {
+        try await Task.sleep(for: timeout)
+        return RemoteToolCallResult(
+          requestId: request.id, success: false,
+          errorMessage: "Timeout waiting for remote tool result (\(timeout))", errorCode: -32000)
+      }
+      defer { group.cancelAll() }
+      return try await group.next() ?? RemoteToolCallResult(
+        requestId: request.id, success: false,
+        errorMessage: "No result", errorCode: -32000)
+    }
+  }
+
+  /// Check if a tool is authorized for a specific peer via SwiftData RemoteToolPolicy.
+  @MainActor
+  private func isToolAuthorized(_ toolName: String, for peerId: String) async -> Bool {
+    guard let context = modelContext else {
+      logger.warning("isToolAuthorized: no modelContext available — defaulting to deny")
+      return false  // Default-deny if can't access policy store
+    }
+    let peerDeviceId = peerId
+    let descriptor = FetchDescriptor<RemoteToolPolicy>(
+      predicate: #Predicate { $0.peerDeviceId == peerDeviceId && $0.isActive }
+    )
+    guard let policies = try? context.fetch(descriptor), let policy = policies.first else {
+      return false  // Default-deny: no policy = no access
+    }
+    return policy.isToolAllowed(toolName)
+  }
+
+  /// Get the rate limit for a specific peer from their policy.
+  @MainActor
+  private func getRemoteToolRateLimit(for peerId: String) async -> Int {
+    guard let context = modelContext else {
+      return 60  // Default rate limit
+    }
+    let peerDeviceId = peerId
+    let descriptor = FetchDescriptor<RemoteToolPolicy>(
+      predicate: #Predicate { $0.peerDeviceId == peerDeviceId && $0.isActive }
+    )
+    guard let policies = try? context.fetch(descriptor), let policy = policies.first else {
+      return 60
+    }
+    return policy.maxRequestsPerMinute
+  }
+
+  /// Record an audit log entry for a remote tool call.
+  private func recordAuditEntry(
+    request: RemoteToolCallRequest,
+    peerId: String,
+    success: Bool,
+    errorMessage: String?,
+    durationMs: Int
+  ) {
+    // Hash arguments for audit (don't log raw args which may contain sensitive data)
+    let argsHash = String(request.argumentsJSON.hashValue)
+    let entry = RemoteToolCallAuditEntry(
+      requestId: request.id,
+      callerPeerId: peerId,
+      callerAgentRole: request.callerAgentRole,
+      targetPeerId: capabilities.deviceId,
+      toolName: request.toolName,
+      argumentsHash: argsHash,
+      success: success,
+      errorMessage: errorMessage,
+      durationMs: durationMs
+    )
+    remoteToolCallAuditLog.insert(entry, at: 0)
+    if remoteToolCallAuditLog.count > maxAuditLogEntries {
+      remoteToolCallAuditLog.removeLast()
+    }
+  }
   
   // MARK: - Native Self-Restart
   
@@ -3023,6 +3277,23 @@ extension SwarmCoordinator {
     case .ragArtifactsResumeRequest:
       // Resume protocol removed — transfers are retried from scratch if they fail.
       logger.warning("Received ragArtifactsResumeRequest from \(peerId) — ignoring (resume protocol removed)")
+
+    case .remoteToolCall(let request):
+      traceMessage(direction: "IN", peerId: peerId, type: "remoteToolCall", detail: "id=\(request.id) tool=\(request.toolName)")
+      logger.info("Received remoteToolCall: \(request.toolName) from \(peerId)")
+      Task {
+        await handleRemoteToolCall(request, from: peerId)
+      }
+
+    case .remoteToolResult(let result):
+      traceMessage(direction: "IN", peerId: peerId, type: "remoteToolResult", detail: "id=\(result.requestId) success=\(result.success)")
+      logger.info("Remote tool call \(result.requestId) completed: success=\(result.success)")
+      if let waiter = pendingRemoteToolCalls.removeValue(forKey: result.requestId) {
+        waiter.yield(result)
+        waiter.finish()
+      } else {
+        logger.warning("No pending continuation for remoteToolResult id=\(result.requestId)")
+      }
       
     default:
       logger.debug("Received message: \(message.messageType) from \(peerId)")

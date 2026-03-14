@@ -87,7 +87,14 @@ public final class SwarmToolsHandler: MCPToolHandler {
     // On-demand P2P RAG index sharing
     "swarm.rag-versions",
     "swarm.rag-availability",
-    "swarm.rag-sync-index"
+    "swarm.rag-sync-index",
+    // Remote MCP tool proxy (#376)
+    "swarm.remote-tool-call",
+    "swarm.remote-tool-audit",
+    "swarm.remote-tool-policy",
+    // Agent personalities (#383)
+    "swarm.agent-personalities",
+    "swarm.agent-personality.create",
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -183,6 +190,18 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleRagAvailability(id: id, arguments: arguments)
     case "swarm.rag-sync-index":
       return await handleRagSyncIndex(id: id, arguments: arguments)
+    // Remote MCP tool proxy (#376)
+    case "swarm.remote-tool-call":
+      return await handleRemoteToolCall(id: id, arguments: arguments)
+    case "swarm.remote-tool-audit":
+      return handleRemoteToolAudit(id: id, arguments: arguments)
+    case "swarm.remote-tool-policy":
+      return await handleRemoteToolPolicy(id: id, arguments: arguments)
+    // Agent personalities (#383)
+    case "swarm.agent-personalities":
+      return await handleAgentPersonalities(id: id, arguments: arguments)
+    case "swarm.agent-personality.create":
+      return await handleAgentPersonalityCreate(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }

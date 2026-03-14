@@ -982,6 +982,19 @@ extension MCPServerService {
     }
   }
 
+  // MARK: - Remote Tool Call API
+
+  /// Execute an MCP tool call programmatically (for remote peer proxy via WebRTC).
+  /// Returns the raw JSON-RPC response body. The caller is responsible for authorization checks.
+  public func executeRemoteToolCall(toolName: String, arguments: [String: Any]) async -> (statusCode: Int, responseData: Data) {
+    let id = UUID().uuidString
+    let params: [String: Any] = [
+      "name": toolName,
+      "arguments": arguments,
+    ]
+    return await handleToolCall(id: id, params: params)
+  }
+
   private func handleToolCall(id: Any?, params: [String: Any]?) async -> (Int, Data) {
     guard let params, let name = params["name"] as? String else {
       await telemetryProvider.warning("Invalid tool call params", metadata: [:])

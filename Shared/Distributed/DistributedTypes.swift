@@ -716,6 +716,111 @@ extension DistributedError: LocalizedError {
   }
 }
 
+// MARK: - Remote Tool Call Types
+
+/// Request to execute an MCP tool on a remote peer via WebRTC.
+/// Security: the receiving peer validates the caller against its RemoteToolPolicy allowlist.
+public struct RemoteToolCallRequest: Codable, Sendable {
+  /// Unique request ID for response correlation
+  public let id: UUID
+  /// MCP tool name (dot notation, e.g. "rag.search")
+  public let toolName: String
+  /// Tool arguments as JSON-encoded string (avoids heterogeneous dict encoding issues)
+  public let argumentsJSON: String
+  /// Caller's device ID (verified against authenticated WebRTC session)
+  public let callerDeviceId: String
+  /// Caller's agent personality role, if any (for audit trail)
+  public let callerAgentRole: String?
+  /// Timestamp for replay protection (reject if >30s old)
+  public let timestamp: Date
+
+  public init(
+    id: UUID = UUID(),
+    toolName: String,
+    argumentsJSON: String,
+    callerDeviceId: String,
+    callerAgentRole: String? = nil,
+    timestamp: Date = Date()
+  ) {
+    self.id = id
+    self.toolName = toolName
+    self.argumentsJSON = argumentsJSON
+    self.callerDeviceId = callerDeviceId
+    self.callerAgentRole = callerAgentRole
+    self.timestamp = timestamp
+  }
+}
+
+/// Result of a remote MCP tool call execution.
+public struct RemoteToolCallResult: Codable, Sendable {
+  /// Matches the request ID for correlation
+  public let requestId: UUID
+  /// Whether the tool executed successfully
+  public let success: Bool
+  /// JSON-encoded tool result content (matches MCP JSON-RPC result format)
+  public let resultJSON: String?
+  /// Error message if execution failed
+  public let errorMessage: String?
+  /// Error code (MCP JSON-RPC error codes)
+  public let errorCode: Int?
+  /// Execution duration in milliseconds
+  public let durationMs: Int
+
+  public init(
+    requestId: UUID,
+    success: Bool,
+    resultJSON: String? = nil,
+    errorMessage: String? = nil,
+    errorCode: Int? = nil,
+    durationMs: Int = 0
+  ) {
+    self.requestId = requestId
+    self.success = success
+    self.resultJSON = resultJSON
+    self.errorMessage = errorMessage
+    self.errorCode = errorCode
+    self.durationMs = durationMs
+  }
+}
+
+/// Audit log entry for a remote tool call (stored in memory, not persisted to SwiftData for performance).
+public struct RemoteToolCallAuditEntry: Sendable {
+  public let requestId: UUID
+  public let callerPeerId: String
+  public let callerAgentRole: String?
+  public let targetPeerId: String
+  public let toolName: String
+  public let argumentsHash: String
+  public let success: Bool
+  public let errorMessage: String?
+  public let durationMs: Int
+  public let timestamp: Date
+
+  public init(
+    requestId: UUID,
+    callerPeerId: String,
+    callerAgentRole: String?,
+    targetPeerId: String,
+    toolName: String,
+    argumentsHash: String,
+    success: Bool,
+    errorMessage: String?,
+    durationMs: Int,
+    timestamp: Date = Date()
+  ) {
+    self.requestId = requestId
+    self.callerPeerId = callerPeerId
+    self.callerAgentRole = callerAgentRole
+    self.targetPeerId = targetPeerId
+    self.toolName = toolName
+    self.argumentsHash = argumentsHash
+    self.success = success
+    self.errorMessage = errorMessage
+    self.durationMs = durationMs
+    self.timestamp = timestamp
+  }
+}
+
 // MARK: - Protocol Messages
 
 /// Messages sent between crown and worker over the wire
@@ -743,6 +848,10 @@ public enum PeerMessage: Codable, Sendable {
   case ragArtifactsAck(id: UUID, receivedChunks: Int, receivedBytes: Int)
   /// Receiver requests resume of a partially-completed transfer, providing chunk indices already received
   case ragArtifactsResumeRequest(id: UUID, receivedChunkIndices: Set<Int>, repoIdentifier: String?, transferMode: RAGTransferMode?)
+  /// Remote MCP tool call: caller requests execution of an MCP tool on the target peer
+  case remoteToolCall(request: RemoteToolCallRequest)
+  /// Remote MCP tool result: target returns the result of a remote tool call
+  case remoteToolResult(result: RemoteToolCallResult)
   case goodbye
   
   /// Unique identifier for message type (for logging)
@@ -769,6 +878,8 @@ public enum PeerMessage: Codable, Sendable {
     case .ragArtifactsError: return "ragArtifactsError"
     case .ragArtifactsAck: return "ragArtifactsAck"
     case .ragArtifactsResumeRequest: return "ragArtifactsResumeRequest"
+    case .remoteToolCall: return "remoteToolCall"
+    case .remoteToolResult: return "remoteToolResult"
     case .goodbye: return "goodbye"
     }
   }

@@ -311,6 +311,8 @@ struct PeelApp: App {
       PRReviewQueueItem.self,
       ScheduledChain.self,
       ScheduledChainRun.self,
+      RemoteToolPolicy.self,
+      AgentPersonality.self,
     ])
 
     let localSchema = Schema([
@@ -338,6 +340,8 @@ struct PeelApp: App {
       PRReviewQueueItem.self,
       ScheduledChain.self,
       ScheduledChainRun.self,
+      RemoteToolPolicy.self,
+      AgentPersonality.self,
       TrackedRepoDeviceState.self,
     ])
 

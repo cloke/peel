@@ -901,6 +901,13 @@ public final class MCPServerService {
     localChatToolsHandler?.mcpServer = self
     SwarmCoordinator.shared.ragSyncDelegate = self
     RAGSyncCoordinator.shared.ragSyncDelegate = self
+
+    // Wire up remote tool execution proxy: lets SwarmCoordinator execute MCP tools
+    // on behalf of remote peers via WebRTC
+    SwarmCoordinator.shared.localToolExecutor = { [weak self] toolName, arguments in
+      guard let self else { return (500, Data()) }
+      return await self.executeRemoteToolCall(toolName: toolName, arguments: arguments)
+    }
   }
 
   public var toolCategories: [ToolCategory] {
