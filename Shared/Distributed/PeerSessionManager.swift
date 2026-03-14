@@ -24,6 +24,9 @@ public final class PeerSessionManager {
   /// Observable state mirror of each peer's connection state.
   private(set) var peerStates: [String: PeerSessionState] = [:]
 
+  /// When each session entered .connecting state (for timeout decisions).
+  private var connectStartedAt: [String: Date] = [:]
+
   /// Last known RTT for each peer (ms).
   private(set) var peerRTT: [String: Double] = [:]
 
@@ -58,38 +61,28 @@ public final class PeerSessionManager {
         }
         logger.warning("Session for \(peerId, privacy: .public) is connected but missing channels (mcp: \(hasMCP), transfer: \(hasTransfer)) — resetting")
       } else if existingState == .connecting || existingState == .reconnecting {
-        // A half-open session can get stuck in .connecting and block all future reconnects.
-        // Give it a brief chance to finish, then reset if channels never become ready.
-        var becameReady = false
-        for _ in 0..<20 {
-          try? await Task.sleep(for: .milliseconds(100))
-          let hasMCP = await existing.mcpChannel != nil
-          let hasTransfer = await existing.transferChannel != nil
-          if hasMCP && hasTransfer {
-            peerStates[peerId] = .connected
-            logger.info("Existing connecting session for \(peerId, privacy: .public) became ready")
-            becameReady = true
-            break
-          }
-          let stateNow = await existing.state
-          if stateNow == .failed || stateNow == .disconnected {
-            break
-          }
-        }
-        if becameReady {
+        // If the session has been connecting for less than 60 seconds, it's likely
+        // still doing SDP/ICE negotiation. Don't clobber it — just return and let
+        // the existing attempt finish. WebRTC negotiation over Firestore signaling
+        // can easily take 10-30+ seconds (offer → Firestore → remote → answer → ICE).
+        let connectAge = Date().timeIntervalSince(connectStartedAt[peerId] ?? .distantPast)
+        if connectAge < 60 {
+          logger.info("Session for \(peerId, privacy: .public) still connecting (\(Int(connectAge))s old) — not clobbering")
           return
         }
-        logger.warning("Session for \(peerId, privacy: .public) stuck in \(existingState.rawValue, privacy: .public) without channels — resetting")
+        logger.warning("Session for \(peerId, privacy: .public) stuck in \(existingState.rawValue, privacy: .public) for \(Int(connectAge))s — resetting")
       }
       await existing.disconnect()
       sessions.removeValue(forKey: peerId)
       peerStates.removeValue(forKey: peerId)
       peerRTT.removeValue(forKey: peerId)
+      connectStartedAt.removeValue(forKey: peerId)
     }
 
     let session = PeerSession(peerId: peerId)
     sessions[peerId] = session
     peerStates[peerId] = .connecting
+    connectStartedAt[peerId] = Date()
 
     await session.setStateChangeHandler { [weak self] newState in
       Task { @MainActor [weak self] in
@@ -104,9 +97,11 @@ public final class PeerSessionManager {
     do {
       try await session.connect(signaling: signaling)
       peerStates[peerId] = .connected
+      connectStartedAt.removeValue(forKey: peerId)
       logger.notice("Session established with \(peerId, privacy: .public)")
     } catch {
       peerStates[peerId] = .failed
+      connectStartedAt.removeValue(forKey: peerId)
       logger.error("Failed to connect to \(peerId, privacy: .public): \(error.localizedDescription, privacy: .public)")
       throw error
     }
@@ -123,11 +118,13 @@ public final class PeerSessionManager {
       sessions.removeValue(forKey: peerId)
       peerStates.removeValue(forKey: peerId)
       peerRTT.removeValue(forKey: peerId)
+      connectStartedAt.removeValue(forKey: peerId)
     }
 
     let session = PeerSession(peerId: peerId)
     sessions[peerId] = session
     peerStates[peerId] = .connecting
+    connectStartedAt[peerId] = Date()
 
     await session.setStateChangeHandler { [weak self] newState in
       Task { @MainActor [weak self] in
@@ -142,9 +139,11 @@ public final class PeerSessionManager {
     do {
       try await session.accept(signaling: signaling)
       peerStates[peerId] = .connected
+      connectStartedAt.removeValue(forKey: peerId)
       logger.notice("Accepted session from \(peerId, privacy: .public)")
     } catch {
       peerStates[peerId] = .failed
+      connectStartedAt.removeValue(forKey: peerId)
       logger.error("Failed to accept from \(peerId, privacy: .public): \(error.localizedDescription, privacy: .public)")
       throw error
     }
@@ -159,6 +158,7 @@ public final class PeerSessionManager {
     sessions.removeValue(forKey: peerId)
     peerStates.removeValue(forKey: peerId)
     peerRTT.removeValue(forKey: peerId)
+    connectStartedAt.removeValue(forKey: peerId)
     logger.notice("Disconnected peer \(peerId, privacy: .public)")
   }
 
@@ -171,6 +171,7 @@ public final class PeerSessionManager {
     sessions.removeAll()
     peerStates.removeAll()
     peerRTT.removeAll()
+    connectStartedAt.removeAll()
   }
 
   // MARK: - Lookup

@@ -289,9 +289,10 @@ public actor PeerSession {
   }
 
   private nonisolated func handleICEStateChange(_ rawState: Int) async {
-    // RTCIceConnectionState raw values:
-    // .disconnected = 5 (transient), .failed = 6 (terminal), .closed = 7
-    if rawState == 6 || rawState == 7 {
+    // RTCIceConnectionState raw values (from WebRTC ObjC enum):
+    // 0 = new, 1 = checking, 2 = connected, 3 = completed,
+    // 4 = failed (terminal), 5 = disconnected (transient), 6 = closed (terminal)
+    if rawState == 4 || rawState == 6 {
       await self.onICEFailed()
     }
   }
