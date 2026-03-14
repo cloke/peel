@@ -16,13 +16,33 @@ import RAGCore
 // MARK: - Export/Import Bundle Types
 
 /// A per-repo export bundle containing all RAG data for one repository.
+/// When the repo has sub-packages (e.g. Local Packages/Git), they are included
+/// in `subPackages` so the receiver gets the full index.
 struct RAGRepoExportBundle: Codable, Sendable {
   let manifest: RAGRepoSyncManifest
   let repo: ExportedRepo
   let files: [ExportedFile]
+  /// Sub-packages that share the same repoIdentifier (e.g. Swift local packages).
+  /// Optional for backward compatibility with bundles from older senders.
+  let subPackages: [SubPackageExport]?
 
-  var totalChunks: Int { files.reduce(0) { $0 + $1.chunks.count } }
-  var totalEmbeddings: Int { files.reduce(0) { $0 + $1.chunks.filter { $0.embeddingBase64 != nil }.count } }
+  var totalChunks: Int {
+    let main = files.reduce(0) { $0 + $1.chunks.count }
+    let sub = (subPackages ?? []).reduce(0) { $0 + $1.files.reduce(0) { $0 + $1.chunks.count } }
+    return main + sub
+  }
+  var totalEmbeddings: Int {
+    let main = files.reduce(0) { $0 + $1.chunks.filter { $0.embeddingBase64 != nil }.count }
+    let sub = (subPackages ?? []).reduce(0) { $0 + $1.files.reduce(0) { $0 + $1.chunks.filter { $0.embeddingBase64 != nil }.count } }
+    return main + sub
+  }
+}
+
+/// A sub-package export: its repo row + files/chunks.
+struct SubPackageExport: Codable, Sendable {
+  let repo: ExportedRepo
+  let files: [ExportedFile]
+  let fileHashes: [RAGRepoSyncManifest.FileHashEntry]
 }
 
 /// Manifest for a per-repo sync — describes what the sender has.
@@ -187,24 +207,51 @@ enum RAGRepoExporter {
     }
     defer { sqlite3_close(db) }
 
-    // Find the best matching repo for this identifier.
+    // Find all matching repos for this identifier (parent + sub-packages).
     let candidates = queryRepoCandidates(db: db, repoIdentifier: repoIdentifier)
-    guard let candidate = selectBestRepoCandidate(candidates) else {
+    guard let primaryCandidate = selectBestRepoCandidate(candidates) else {
       return nil
     }
-    let repo = candidate.repo
+    let repo = primaryCandidate.repo
 
-    // Query all files for this repo
+    // Query all files for the primary repo
     let allFileHashes = queryFileHashes(db: db, repoId: repo.id)
 
-    // Build manifest
+    // Build manifest — counts include sub-packages for accurate totals
     let headSHA = gitHeadSHA(for: repo.rootPath)
     let (effectiveEmbeddingModel, effectiveEmbeddingDimensions) = resolveEmbeddingProfile(
-      for: candidate,
+      for: primaryCandidate,
       among: candidates,
       defaultEmbeddingModel: embeddingModel,
       defaultEmbeddingDimensions: embeddingDimensions
     )
+
+    // Export sub-packages (other candidates that aren't the primary)
+    var subPackages: [SubPackageExport] = []
+    for candidate in candidates where candidate.repo.id != repo.id {
+      let subFileHashes = queryFileHashes(db: db, repoId: candidate.repo.id)
+      var subFiles: [ExportedFile] = []
+      for fileHash in subFileHashes {
+        if excludeFileHashes.contains(fileHash.hash) { continue }
+        if let file = queryFile(db: db, fileId: fileHash.fileId) {
+          subFiles.append(file)
+        }
+      }
+      if !subFiles.isEmpty || !subFileHashes.isEmpty {
+        subPackages.append(SubPackageExport(
+          repo: candidate.repo,
+          files: subFiles,
+          fileHashes: subFileHashes
+        ))
+      }
+    }
+
+    // Aggregate counts across primary + sub-packages
+    let totalFileCount = allFileHashes.count + subPackages.reduce(0) { $0 + $1.fileHashes.count }
+    let totalChunkCount = allFileHashes.reduce(0) { $0 + $1.chunkCount }
+      + subPackages.reduce(0) { $0 + $1.fileHashes.reduce(0) { $0 + $1.chunkCount } }
+    let allManifestHashes = allFileHashes + subPackages.flatMap(\.fileHashes)
+
     let manifest = RAGRepoSyncManifest(
       repoIdentifier: repoIdentifier,
       repoName: repo.name,
@@ -213,12 +260,12 @@ enum RAGRepoExporter {
       embeddingDimensions: effectiveEmbeddingDimensions,
       createdAt: Date(),
       headSHA: headSHA,
-      fileCount: allFileHashes.count,
-      chunkCount: allFileHashes.reduce(0) { $0 + $1.chunkCount },
-      fileHashes: allFileHashes
+      fileCount: totalFileCount,
+      chunkCount: totalChunkCount,
+      fileHashes: allManifestHashes
     )
 
-    // Export files (skipping those the receiver already has)
+    // Export primary repo files (skipping those the receiver already has)
     var exportedFiles: [ExportedFile] = []
     for fileHash in allFileHashes {
       if excludeFileHashes.contains(fileHash.hash) {
@@ -232,7 +279,8 @@ enum RAGRepoExporter {
     return RAGRepoExportBundle(
       manifest: manifest,
       repo: repo,
-      files: exportedFiles
+      files: exportedFiles,
+      subPackages: subPackages.isEmpty ? nil : subPackages
     )
   }
 
@@ -268,6 +316,12 @@ enum RAGRepoExporter {
       defaultEmbeddingDimensions: embeddingDimensions
     )
 
+    // Include sub-package file hashes in manifest for accurate totals
+    var allHashes = fileHashes
+    for c in candidates where c.repo.id != repo.id {
+      allHashes += queryFileHashes(db: db, repoId: c.repo.id)
+    }
+
     return RAGRepoSyncManifest(
       repoIdentifier: repoIdentifier,
       repoName: repo.name,
@@ -276,9 +330,9 @@ enum RAGRepoExporter {
       embeddingDimensions: effectiveEmbeddingDimensions,
       createdAt: Date(),
       headSHA: headSHA,
-      fileCount: fileHashes.count,
-      chunkCount: fileHashes.reduce(0) { $0 + $1.chunkCount },
-      fileHashes: fileHashes
+      fileCount: allHashes.count,
+      chunkCount: allHashes.reduce(0) { $0 + $1.chunkCount },
+      fileHashes: allHashes
     )
   }
 
@@ -1031,14 +1085,22 @@ enum RAGRepoImporter {
         filesImported += 1
       }
 
-      // Step 3: Prune local files not present in the sender's manifest.
-      // The manifest lists ALL files the sender has for this repo. Any local file
-      // not in the manifest was deleted on the sender and should be removed here.
-      // Safety: skip pruning if the manifest has no file hashes (empty manifest
-      // likely indicates a bug or partial export, not "all files deleted").
-      let manifestPaths = Set(bundle.manifest.fileHashes.map(\.path))
+      // Step 3: Prune local files not present in the sender's primary repo manifest.
+      // The bundle.files contains only files for the primary repo. Any local file
+      // not in the primary file set was deleted on the sender and should be removed here.
+      // Safety: skip pruning if no file hashes (empty manifest = bug or partial export).
+      // NOTE: Use only primary repo file paths, not the full manifest which may include sub-packages.
+      // If the sender skipped some files (delta sync), also include paths from manifest fileHashes
+      // that belong to the primary repo (those with matching fileIds from the primary's export).
+      let fullPrimaryPaths: Set<String> = {
+        // The manifest.fileHashes may include sub-package hashes. Extract only primary repo hashes:
+        // Primary repo files are those NOT in any sub-package's fileHashes.
+        let subPkgFileIds = Set((bundle.subPackages ?? []).flatMap { $0.fileHashes.map(\.fileId) })
+        let primaryHashes = bundle.manifest.fileHashes.filter { !subPkgFileIds.contains($0.fileId) }
+        return Set(primaryHashes.map(\.path))
+      }()
 
-      if !manifestPaths.isEmpty {
+      if !fullPrimaryPaths.isEmpty {
         let queryPathsSql = "SELECT path FROM files WHERE repo_id = ?"
         var pathsStmt: OpaquePointer?
         if sqlite3_prepare_v2(db, queryPathsSql, -1, &pathsStmt, nil) == SQLITE_OK,
@@ -1049,7 +1111,7 @@ enum RAGRepoImporter {
           while sqlite3_step(pathsStmt) == SQLITE_ROW {
             if let text = sqlite3_column_text(pathsStmt, 0) {
               let path = String(cString: text)
-              if !manifestPaths.contains(path) {
+              if !fullPrimaryPaths.contains(path) {
                 stalePaths.append(path)
               }
             }
@@ -1059,6 +1121,159 @@ enum RAGRepoImporter {
           for stalePath in stalePaths {
             deleteFileData(db: db, repoId: targetRepoId, path: stalePath)
             filesPruned += 1
+          }
+        }
+      }
+
+      // Step 4: Import sub-packages (if present)
+      for subPkg in bundle.subPackages ?? [] {
+        let subTargetRepoId: String
+        let subTargetRootPath: String
+        if let localRepoPath, !subPkg.repo.rootPath.isEmpty {
+          // Remap: the sub-package's rootPath is relative to the main repo's rootPath
+          // e.g., sender: /Users/bender/code/peel/Local Packages/Git
+          //        local:  /Users/me/code/peel/Local Packages/Git
+          let senderMainRoot = bundle.repo.rootPath
+          if subPkg.repo.rootPath.hasPrefix(senderMainRoot) {
+            let suffix = String(subPkg.repo.rootPath.dropFirst(senderMainRoot.count))
+            subTargetRootPath = localRepoPath + suffix
+          } else {
+            subTargetRootPath = subPkg.repo.rootPath
+          }
+        } else {
+          subTargetRootPath = subPkg.repo.rootPath
+        }
+
+        if let existingId = findRepoByIdentifier(db: db, identifier: subPkg.repo.repoIdentifier) {
+          subTargetRepoId = existingId
+          let updateSql = "UPDATE repos SET last_indexed_at = ?, root_path = ?, embedding_model = ?, embedding_dimensions = ?, parent_repo_id = ? WHERE id = ?"
+          try execBind(db, updateSql) { stmt in
+            bindTextOrNull(stmt, 1, subPkg.repo.lastIndexedAt)
+            bindText(stmt, 2, subTargetRootPath)
+            bindTextOrNull(stmt, 3, subPkg.repo.embeddingModel)
+            bindIntOrNull(stmt, 4, subPkg.repo.embeddingDimensions)
+            bindText(stmt, 5, targetRepoId) // parent is the primary repo
+            bindText(stmt, 6, existingId)
+          }
+        } else {
+          subTargetRepoId = stableId(for: subTargetRootPath)
+          let insertSql = """
+            INSERT INTO repos (id, name, root_path, last_indexed_at, repo_identifier, parent_repo_id, embedding_model, embedding_dimensions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+          try execBind(db, insertSql) { stmt in
+            bindText(stmt, 1, subTargetRepoId)
+            bindText(stmt, 2, subPkg.repo.name)
+            bindText(stmt, 3, subTargetRootPath)
+            bindTextOrNull(stmt, 4, subPkg.repo.lastIndexedAt)
+            bindText(stmt, 5, subPkg.repo.repoIdentifier)
+            bindText(stmt, 6, targetRepoId) // parent is the primary repo
+            bindTextOrNull(stmt, 7, subPkg.repo.embeddingModel)
+            bindIntOrNull(stmt, 8, subPkg.repo.embeddingDimensions)
+          }
+        }
+
+        // Import sub-package files
+        for file in subPkg.files {
+          let existingHash = queryFileHash(db: db, repoId: subTargetRepoId, path: file.path)
+          if existingHash == file.hash {
+            let updates = try updateAnalysisForExistingFile(
+              db: db, repoId: subTargetRepoId, file: file, embeddingsCompatible: embeddingsCompatible
+            )
+            chunksAnalysisUpdated += updates.analysisCount
+            embeddingsBackfilled += updates.embeddingsCount
+            filesSkipped += 1
+            continue
+          }
+          if existingHash != nil {
+            deleteFileData(db: db, repoId: subTargetRepoId, path: file.path)
+          }
+
+          let fileId = stableId(for: "\(subTargetRepoId):\(file.path)")
+          let fileSql = """
+            INSERT OR REPLACE INTO files (id, repo_id, path, hash, language, updated_at,
+                                          module_path, feature_tags, line_count, method_count, byte_size)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+          try execBind(db, fileSql) { stmt in
+            bindText(stmt, 1, fileId)
+            bindText(stmt, 2, subTargetRepoId)
+            bindText(stmt, 3, file.path)
+            bindText(stmt, 4, file.hash)
+            bindTextOrNull(stmt, 5, file.language)
+            bindTextOrNull(stmt, 6, file.updatedAt)
+            bindTextOrNull(stmt, 7, file.modulePath)
+            bindTextOrNull(stmt, 8, file.featureTags)
+            sqlite3_bind_int(stmt, 9, Int32(file.lineCount))
+            sqlite3_bind_int(stmt, 10, Int32(file.methodCount))
+            sqlite3_bind_int(stmt, 11, Int32(file.byteSize))
+          }
+
+          for chunk in file.chunks {
+            let chunkId = stableId(for: "\(fileId):\(chunk.startLine)-\(chunk.endLine)")
+            let chunkSql = """
+              INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count,
+                                             construct_type, construct_name, metadata,
+                                             ai_summary, ai_tags, analyzed_at, analyzer_model, enriched_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              """
+            try execBind(db, chunkSql) { stmt in
+              bindText(stmt, 1, chunkId)
+              bindText(stmt, 2, fileId)
+              sqlite3_bind_int(stmt, 3, Int32(chunk.startLine))
+              sqlite3_bind_int(stmt, 4, Int32(chunk.endLine))
+              bindText(stmt, 5, chunk.text)
+              sqlite3_bind_int(stmt, 6, Int32(chunk.tokenCount))
+              bindTextOrNull(stmt, 7, chunk.constructType)
+              bindTextOrNull(stmt, 8, chunk.constructName)
+              bindTextOrNull(stmt, 9, chunk.metadata)
+              bindTextOrNull(stmt, 10, chunk.aiSummary)
+              bindTextOrNull(stmt, 11, chunk.aiTags)
+              bindTextOrNull(stmt, 12, chunk.analyzedAt)
+              bindTextOrNull(stmt, 13, chunk.analyzerModel)
+              bindTextOrNull(stmt, 14, chunk.enrichedAt)
+            }
+            chunksImported += 1
+
+            if let embeddingBase64 = chunk.embeddingBase64,
+               let embeddingData = Data(base64Encoded: embeddingBase64) {
+              if embeddingsCompatible {
+                let embSql = "INSERT OR REPLACE INTO embeddings (chunk_id, embedding) VALUES (?, ?)"
+                try execBind(db, embSql) { stmt in
+                  bindText(stmt, 1, chunkId)
+                  sqlite3_bind_blob(stmt, 2, (embeddingData as NSData).bytes, Int32(embeddingData.count),
+                                    unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                }
+                embeddingsImported += 1
+              } else {
+                embeddingsSkippedModelMismatch += 1
+              }
+            }
+          }
+          filesImported += 1
+        }
+
+        // Prune stale files in sub-package
+        let subManifestPaths = Set(subPkg.fileHashes.map(\.path))
+        if !subManifestPaths.isEmpty {
+          let queryPathsSql = "SELECT path FROM files WHERE repo_id = ?"
+          var pathsStmt: OpaquePointer?
+          if sqlite3_prepare_v2(db, queryPathsSql, -1, &pathsStmt, nil) == SQLITE_OK,
+             let pathsStmt {
+            let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            sqlite3_bind_text(pathsStmt, 1, subTargetRepoId, -1, transient)
+            var stalePaths: [String] = []
+            while sqlite3_step(pathsStmt) == SQLITE_ROW {
+              if let text = sqlite3_column_text(pathsStmt, 0) {
+                let path = String(cString: text)
+                if !subManifestPaths.contains(path) { stalePaths.append(path) }
+              }
+            }
+            sqlite3_finalize(pathsStmt)
+            for stalePath in stalePaths {
+              deleteFileData(db: db, repoId: subTargetRepoId, path: stalePath)
+              filesPruned += 1
+            }
           }
         }
       }
