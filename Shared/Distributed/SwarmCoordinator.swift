@@ -2231,10 +2231,11 @@ public final class SwarmCoordinator {
       failTransfer(id: transfer.id, message: "Transfer stuck in queued for \(elapsed)s — peer may be unreachable")
     }
 
-    // Fail transfers stuck in .preparing too long
+    // Fail transfers stuck in .preparing too long (600s — large repos can
+    // take several minutes for the sender to export from SQLite + JSON encode)
     for transfer in ragTransfers {
       guard transfer.status == .preparing,
-            now.timeIntervalSince(transfer.startedAt) >= 120 else { continue }
+            now.timeIntervalSince(transfer.startedAt) >= 600 else { continue }
       let elapsed = Int(now.timeIntervalSince(transfer.startedAt))
       logger.warning("RAG transfer \(transfer.id) stuck in preparing for \(elapsed)s — failing")
       updateRagTransfer(transfer.id) { state in
@@ -2940,6 +2941,11 @@ extension SwarmCoordinator {
           repoIdentifier: repoIdentifier
         )
         recordRagTransfer(transfer)
+        // Immediately ack so the receiver knows we're alive and moves from
+        // .queued → .preparing (preventing premature timeout for large exports).
+        Task { [weak self] in
+          try? await self?.sendMessage(.ragArtifactsAck(id: id, receivedChunks: -1, receivedBytes: 0), to: peerId)
+        }
         Task { await sendRagArtifactBundle(transferId: id, to: peer, repoIdentifier: repoIdentifier, transferMode: transferMode ?? .full) }
       } else {
         let transfer = RAGArtifactTransferState(
@@ -2988,8 +2994,18 @@ extension SwarmCoordinator {
         waiter.yield(true)
         waiter.finish()
       }
-      updateRagTransfer(id) { state in
-        state.transferredBytes = receivedBytes
+      // Sender sends receivedChunks=-1 as a "preparing" ack — move from queued to preparing
+      if receivedChunks == -1,
+         let transfer = ragTransfers.first(where: { $0.id == id }),
+         transfer.status == .queued {
+        updateRagTransfer(id) { state in
+          state.status = .preparing
+        }
+        logger.notice("RAG transfer \(id, privacy: .public) moved to preparing (sender acknowledged)")
+      } else {
+        updateRagTransfer(id) { state in
+          state.transferredBytes = receivedBytes
+        }
       }
 
     case .ragArtifactsResumeRequest:
