@@ -53,10 +53,10 @@ public final class PeerSessionManager {
         let hasMCP = await existing.mcpChannel != nil
         let hasTransfer = await existing.transferChannel != nil
         if hasMCP && hasTransfer {
-          logger.info("Already connected to \(peerId)")
+          logger.info("Already connected to \(peerId, privacy: .public)")
           return
         }
-        logger.warning("Session for \(peerId) is connected but missing channels (mcp: \(hasMCP), transfer: \(hasTransfer)) — resetting")
+        logger.warning("Session for \(peerId, privacy: .public) is connected but missing channels (mcp: \(hasMCP), transfer: \(hasTransfer)) — resetting")
       } else if existingState == .connecting || existingState == .reconnecting {
         // A half-open session can get stuck in .connecting and block all future reconnects.
         // Give it a brief chance to finish, then reset if channels never become ready.
@@ -67,7 +67,7 @@ public final class PeerSessionManager {
           let hasTransfer = await existing.transferChannel != nil
           if hasMCP && hasTransfer {
             peerStates[peerId] = .connected
-            logger.info("Existing connecting session for \(peerId) became ready")
+            logger.info("Existing connecting session for \(peerId, privacy: .public) became ready")
             becameReady = true
             break
           }
@@ -79,7 +79,7 @@ public final class PeerSessionManager {
         if becameReady {
           return
         }
-        logger.warning("Session for \(peerId) stuck in \(existingState.rawValue) without channels — resetting")
+        logger.warning("Session for \(peerId, privacy: .public) stuck in \(existingState.rawValue, privacy: .public) without channels — resetting")
       }
       await existing.disconnect()
       sessions.removeValue(forKey: peerId)
@@ -104,10 +104,10 @@ public final class PeerSessionManager {
     do {
       try await session.connect(signaling: signaling)
       peerStates[peerId] = .connected
-      logger.notice("Session established with \(peerId)")
+      logger.notice("Session established with \(peerId, privacy: .public)")
     } catch {
       peerStates[peerId] = .failed
-      logger.error("Failed to connect to \(peerId): \(error)")
+      logger.error("Failed to connect to \(peerId, privacy: .public): \(error.localizedDescription, privacy: .public)")
       throw error
     }
   }
@@ -118,7 +118,7 @@ public final class PeerSessionManager {
     signaling: WebRTCSignalingChannel
   ) async throws {
     if let existing = sessions[peerId] {
-      logger.warning("Replacing existing session for \(peerId) during accept()")
+      logger.warning("Replacing existing session for \(peerId, privacy: .public) during accept()")
       await existing.disconnect()
       sessions.removeValue(forKey: peerId)
       peerStates.removeValue(forKey: peerId)
@@ -142,10 +142,10 @@ public final class PeerSessionManager {
     do {
       try await session.accept(signaling: signaling)
       peerStates[peerId] = .connected
-      logger.notice("Accepted session from \(peerId)")
+      logger.notice("Accepted session from \(peerId, privacy: .public)")
     } catch {
       peerStates[peerId] = .failed
-      logger.error("Failed to accept from \(peerId): \(error)")
+      logger.error("Failed to accept from \(peerId, privacy: .public): \(error.localizedDescription, privacy: .public)")
       throw error
     }
   }
@@ -159,14 +159,14 @@ public final class PeerSessionManager {
     sessions.removeValue(forKey: peerId)
     peerStates.removeValue(forKey: peerId)
     peerRTT.removeValue(forKey: peerId)
-    logger.notice("Disconnected peer \(peerId)")
+    logger.notice("Disconnected peer \(peerId, privacy: .public)")
   }
 
   /// Disconnect all peers.
   func disconnectAll() async {
     for (peerId, session) in sessions {
       await session.disconnect()
-      logger.notice("Disconnected peer \(peerId)")
+      logger.notice("Disconnected peer \(peerId, privacy: .public)")
     }
     sessions.removeAll()
     peerStates.removeAll()

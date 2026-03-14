@@ -29,6 +29,10 @@ import WebRTCTransfer
 
 /// Firestore-backed signaling channel for WebRTC.
 /// Each instance represents one signaling session between two peers.
+///
+/// Each session uses a unique `sessionId` to tag SDP offers and ICE candidates.
+/// This prevents stale candidates from previous sessions (which accumulate in
+/// Firestore subcollections) from being fed to the ICE agent.
 final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendable {
   private let logger = Logger(subsystem: "com.peel.webrtc", category: "Signaling")
   private let db = Firestore.firestore()
@@ -36,6 +40,11 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   private let swarmId: String
   private let myDeviceId: String
   private let remoteDeviceId: String
+
+  /// Unique session identifier shared by both peers. The initiator generates
+  /// it in `prepareSession()` and includes it in the SDP offer. The responder
+  /// extracts it when the offer arrives.
+  private(set) var sessionId: String?
 
   /// Purpose of this signaling session (e.g. "transfer", "ping").
   /// Written to the offer doc so the responder can dispatch appropriately.
@@ -75,9 +84,20 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
     self.remoteDeviceId = remoteDeviceId
   }
 
+  /// Generate a fresh sessionId. Call this on the initiator side before
+  /// creating the SDP offer so that local candidates sent to Firestore
+  /// are tagged with the correct session.
+  func prepareSession() {
+    sessionId = UUID().uuidString
+    logger.notice("[signaling] session prepared: \(self.sessionId ?? "?", privacy: .public)")
+  }
+
   // MARK: - Offers & Answers
 
   func sendOffer(_ sdp: String) async throws {
+    // Generate sessionId if not already prepared
+    if sessionId == nil { prepareSession() }
+
     // Delete any stale remote answer doc so we can detect a fresh one
     try? await remoteDocRef.delete()
 
@@ -85,26 +105,29 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
     try await myDocRef.setData([
       "type": "offer",
       "sdp": sdp,
+      "sessionId": sessionId!,
       "fromWorkerId": myDeviceId,
       "toWorkerId": remoteDeviceId,
       "purpose": purpose,
       "createdAt": FieldValue.serverTimestamp(),
       "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
     ])
-    logger.notice("[signaling] SDP offer written: \(ContinuousClock.now - start)")
+    logger.notice("[signaling] SDP offer written (session=\(self.sessionId?.prefix(8) ?? "?", privacy: .public)): \(ContinuousClock.now - start)")
   }
 
   func sendAnswer(_ sdp: String) async throws {
     let start = ContinuousClock.now
-    try await myDocRef.setData([
+    var data: [String: Any] = [
       "type": "answer",
       "sdp": sdp,
       "fromWorkerId": myDeviceId,
       "toWorkerId": remoteDeviceId,
       "createdAt": FieldValue.serverTimestamp(),
       "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
-    ])
-    logger.notice("[signaling] SDP answer written: \(ContinuousClock.now - start)")
+    ]
+    if let sessionId { data["sessionId"] = sessionId }
+    try await myDocRef.setData(data)
+    logger.notice("[signaling] SDP answer written (session=\(self.sessionId?.prefix(8) ?? "?", privacy: .public)): \(ContinuousClock.now - start)")
   }
 
   func waitForOffer(timeout: Duration) async throws -> String {
@@ -116,7 +139,7 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   }
 
   private func waitForSDP(docRef: DocumentReference, expectedType: String, timeout: Duration) async throws -> String {
-    logger.notice("[signaling] waiting for \(expectedType) (timeout: \(timeout))")
+    logger.notice("[signaling] waiting for \(expectedType) (timeout: \(timeout), session=\(self.sessionId?.prefix(8) ?? "none", privacy: .public))")
     let waitStart = ContinuousClock.now
     let result = try await withThrowingTaskGroup(of: String.self) { group in
       group.addTask { [weak self] in
@@ -147,6 +170,13 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
                 return
               }
 
+              // For offers: extract the initiator's sessionId so the responder
+              // can tag its candidates and filter incoming ones.
+              if expectedType == "offer", let sid = data["sessionId"] as? String {
+                self?.sessionId = sid
+                self?.logger.notice("[signaling] extracted sessionId \(sid.prefix(8), privacy: .public) from offer")
+              }
+
               self?.logger.notice("[signaling] \(expectedType) received from Firestore")
               box.resume(returning: sdp)
             }
@@ -174,20 +204,39 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   // MARK: - ICE Candidates
 
   func sendCandidate(_ candidate: ICECandidateMessage) async throws {
-    try await myCandidatesCollection.addDocument(data: [
+    var data: [String: Any] = [
       "sdp": candidate.sdp,
       "sdpMid": candidate.sdpMid as Any,
       "sdpMLineIndex": candidate.sdpMLineIndex,
       "createdAt": FieldValue.serverTimestamp(),
-    ])
+    ]
+    if let sessionId { data["sessionId"] = sessionId }
+    try await myCandidatesCollection.addDocument(data: data)
   }
 
   func receiveCandidates() -> AsyncStream<ICECandidateMessage> {
-    AsyncStream { continuation in
-      let listener = remoteCandidatesCollection.addSnapshotListener { snapshot, _ in
+    let currentSessionId = sessionId
+    return AsyncStream { continuation in
+      var accepted = 0
+      var rejected = 0
+      let listener = remoteCandidatesCollection.addSnapshotListener { [weak self] snapshot, _ in
         guard let snapshot else { return }
+        // Use the sessionId that was current when the stream was created,
+        // or check the latest one (responder may set it after offer arrives).
+        let sid = currentSessionId ?? self?.sessionId
         for change in snapshot.documentChanges where change.type == .added {
           let data = change.document.data()
+
+          // Filter out candidates from previous sessions.
+          // If we have a sessionId, only accept candidates tagged with the same one.
+          if let sid {
+            let candidateSid = data["sessionId"] as? String
+            if candidateSid != sid {
+              rejected += 1
+              continue
+            }
+          }
+
           guard let sdp = data["sdp"] as? String,
             let sdpMLineIndex = data["sdpMLineIndex"] as? Int
           else { continue }
@@ -197,6 +246,10 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
             sdpMid: sdpMid,
             sdpMLineIndex: Int32(sdpMLineIndex)
           ))
+          accepted += 1
+        }
+        if rejected > 0 {
+          self?.logger.notice("[signaling] candidates: \(accepted) accepted, \(rejected) stale rejected")
         }
       }
       self.listeners.append(listener)

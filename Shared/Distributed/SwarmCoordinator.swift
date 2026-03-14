@@ -489,6 +489,7 @@ public final class SwarmCoordinator {
           remoteDeviceId: workerId
         )
         signaling.purpose = "session"
+        signaling.prepareSession()
         do {
           try await peerSessionManager.connectToPeer(workerId, signaling: signaling)
           await MainActor.run {
@@ -755,6 +756,7 @@ public final class SwarmCoordinator {
       remoteDeviceId: peerId
     )
     signaling.purpose = "session"
+    signaling.prepareSession()
     
     try await peerSessionManager.connectToPeer(peerId, signaling: signaling)
     startListeningOnPeerSession(peerId)

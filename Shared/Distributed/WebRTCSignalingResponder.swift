@@ -52,7 +52,7 @@ public final class WebRTCSignalingResponder {
 
       let listener = query.addSnapshotListener { [weak self] snapshot, error in
         guard let self, let snapshot else {
-          if let error { self?.logger.error("WebRTC signaling listener error: \(error)") }
+          if let error { self?.logger.error("WebRTC signaling listener error: \(error.localizedDescription, privacy: .public)") }
           return
         }
 
@@ -84,7 +84,7 @@ public final class WebRTCSignalingResponder {
               self.respondedOfferFingerprints.removeFirst(self.respondedOfferFingerprints.count - Self.maxOfferFingerprints)
             }
 
-            self.logger.info("WebRTC offer received from \(fromWorkerId) (purpose: \(purpose))")
+            self.logger.info("WebRTC offer received from \(fromWorkerId, privacy: .public) (purpose: \(purpose, privacy: .public))")
             await self.respondToOffer(
               swarmId: swarmId,
               fromWorkerId: fromWorkerId,
@@ -98,7 +98,7 @@ public final class WebRTCSignalingResponder {
       listeners[swarmId] = listener
     }
 
-    logger.info("WebRTC signaling responder started for \(swarmIds.count) swarm(s)")
+    logger.info("WebRTC signaling responder started for \(swarmIds.count, privacy: .public) swarm(s)")
   }
 
   func stop() {
@@ -119,10 +119,10 @@ public final class WebRTCSignalingResponder {
     offerSDP: String,
     purpose: String
   ) async {
-    logger.notice("[responder] respondToOffer: from=\(fromWorkerId) purpose=\(purpose)")
+    logger.notice("[responder] respondToOffer: from=\(fromWorkerId, privacy: .public) purpose=\(purpose, privacy: .public)")
     
     guard purpose == "session" else {
-      logger.warning("Ignoring offer with unsupported purpose '\(purpose)' from \(fromWorkerId)")
+      logger.warning("Ignoring offer with unsupported purpose '\(purpose, privacy: .public)' from \(fromWorkerId, privacy: .public)")
       return
     }
 
@@ -133,19 +133,19 @@ public final class WebRTCSignalingResponder {
     )
 
     guard let peerSessionManager else {
-      logger.warning("No PeerSessionManager — cannot accept session from \(fromWorkerId)")
+      logger.warning("No PeerSessionManager — cannot accept session from \(fromWorkerId, privacy: .public)")
       return
     }
     Task {
       do {
         try await peerSessionManager.acceptFromPeer(fromWorkerId, signaling: signaling)
         await MainActor.run {
-          self.logger.notice("Persistent session accepted from \(fromWorkerId)")
+          self.logger.notice("Persistent session accepted from \(fromWorkerId, privacy: .public)")
           self.onSessionAccepted?(fromWorkerId)
         }
       } catch {
         await MainActor.run {
-          self.logger.error("Failed to accept session from \(fromWorkerId): \(error)")
+          self.logger.error("Failed to accept session from \(fromWorkerId, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
       }
     }

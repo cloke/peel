@@ -96,12 +96,22 @@ public actor PeerSession {
       let chat = try await newClient.openChannel(label: Self.chatLabel)
       logger.notice("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: channels created, starting ICE + SDP exchange")
 
-      // ICE candidate forwarding — kept alive for connection lifetime
+      // Forward local ICE candidates to the remote peer via signaling.
+      // Must be registered before createOffer() so trickle candidates aren't lost.
       localCandidateTask = Task {
         await newClient.onLocalICECandidate { candidate in
           Task { try? await signaling.sendCandidate(candidate) }
         }
       }
+
+      // SDP offer/answer exchange
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: creating SDP offer")
+      let offerSDP = try await newClient.createOffer()
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: sending SDP offer to Firestore")
+      try await signaling.sendOffer(offerSDP)
+
+      // Start receiving remote ICE candidates AFTER sendOffer() so the
+      // signaling channel's sessionId is set and stale candidates are filtered.
       remoteCandidateTask = Task { [logger = self.logger, peerId = self.peerId] in
         var count = 0
         for await candidate in signaling.receiveCandidates() {
@@ -114,11 +124,6 @@ public actor PeerSession {
         logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: remote candidate stream ended (\(count) total)")
       }
 
-      // SDP offer/answer exchange
-      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: creating SDP offer")
-      let offerSDP = try await newClient.createOffer()
-      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: sending SDP offer to Firestore")
-      try await signaling.sendOffer(offerSDP)
       logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for SDP answer")
       let answerSDP = try await signaling.waitForAnswer(timeout: .seconds(30))
       logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: received SDP answer, setting remote description")
@@ -171,12 +176,24 @@ public actor PeerSession {
       await newClient.enableNamedChannels()
       logger.notice("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: accepting connection, enabling named channels")
 
-      // ICE candidate forwarding — kept alive for connection lifetime
+      // Forward local ICE candidates. Must be registered before createAnswer()
+      // triggers ICE gathering. The signaling sessionId gets set during
+      // waitForOffer() below, so local candidates will be tagged correctly.
       localCandidateTask = Task {
         await newClient.onLocalICECandidate { candidate in
           Task { try? await signaling.sendCandidate(candidate) }
         }
       }
+
+      // Receive offer, create answer
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for SDP offer")
+      let offerSDP = try await signaling.waitForOffer(timeout: .seconds(30))
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: received SDP offer, setting remote description")
+      try await newClient.setRemoteOffer(offerSDP)
+
+      // Start receiving remote ICE candidates AFTER waitForOffer() so the
+      // signaling channel's sessionId (extracted from the offer) is set
+      // and stale candidates from previous sessions are filtered out.
       remoteCandidateTask = Task { [logger = self.logger, peerId = self.peerId] in
         var count = 0
         for await candidate in signaling.receiveCandidates() {
@@ -189,11 +206,6 @@ public actor PeerSession {
         logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: remote candidate stream ended (\(count) total)")
       }
 
-      // Receive offer, create answer
-      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for SDP offer")
-      let offerSDP = try await signaling.waitForOffer(timeout: .seconds(30))
-      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: received SDP offer, setting remote description")
-      try await newClient.setRemoteOffer(offerSDP)
       let answerSDP = try await newClient.createAnswer()
       logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: sending SDP answer")
       try await signaling.sendAnswer(answerSDP)
