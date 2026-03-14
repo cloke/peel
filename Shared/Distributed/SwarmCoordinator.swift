@@ -882,11 +882,22 @@ public final class SwarmCoordinator {
           // delivers the TXT record.
           if connectedNames.contains(peer.name) { continue }
 
-          // Skip peers whose TXT record hasn't delivered the real deviceId yet.
-          // Without the UUID, the Firestore signaling doc path will use the
-          // Bonjour service name, which the remote peer won't be listening for.
-          guard peer.hasDeviceId else {
-            self.logger.debug("LAN reconnect: skipping \(peer.name, privacy: .public) — waiting for TXT record with deviceId")
+          // If TXT record hasn't delivered the real deviceId yet, try to
+          // resolve via Firestore worker list (match by hostname).
+          var effectivePeerId = peerId
+          if !peer.hasDeviceId {
+            if let match = FirebaseService.shared.swarmWorkers.first(where: { $0.deviceName == peer.name }) {
+              effectivePeerId = match.id
+              self.logger.info("LAN reconnect: resolved \(peer.name, privacy: .public) to Firestore UUID \(match.id.prefix(8), privacy: .public)")
+            } else {
+              self.logger.info("LAN reconnect: skipping \(peer.name, privacy: .public) — no TXT deviceId and no Firestore match")
+              continue
+            }
+          }
+
+          // Skip if already connected under the resolved ID
+          if connectedIds.contains(effectivePeerId) {
+            failureCounts[peerId] = nil
             continue
           }
 
@@ -900,10 +911,10 @@ public final class SwarmCoordinator {
             continue
           }
 
-          self.logger.info("LAN reconnect: retrying \(peer.name, privacy: .public) (\(peerId, privacy: .public)), attempt \(failures + 1)")
+          self.logger.info("LAN reconnect: retrying \(peer.name, privacy: .public) (\(effectivePeerId.prefix(8), privacy: .public)), attempt \(failures + 1)")
           Task {
             do {
-              try await self.connectToWorker(peerId: peerId)
+              try await self.connectToWorker(peerId: effectivePeerId)
               failureCounts[peerId] = nil  // Reset on success
             } catch {
               failureCounts[peerId] = (failureCounts[peerId] ?? 0) + 1
