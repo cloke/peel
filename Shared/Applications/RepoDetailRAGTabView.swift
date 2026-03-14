@@ -1285,7 +1285,12 @@ struct RAGTabView: View {
       if count == 0 {
         let totalAnalyzed = state?.analyzedCount ?? 0
         if totalAnalyzed > 0 {
-          analyzeSuccess = "All \(totalAnalyzed) chunks already analyzed"
+          let repoTotal = liveChunkCount ?? 0
+          if repoTotal > 0, totalAnalyzed < repoTotal {
+            analyzeSuccess = "\(totalAnalyzed) of \(repoTotal) chunks analyzed — no more to analyze"
+          } else {
+            analyzeSuccess = "All \(totalAnalyzed) chunks already analyzed"
+          }
         } else {
           analyzeSuccess = "No chunks to analyze — index first"
         }
@@ -1330,7 +1335,12 @@ struct RAGTabView: View {
       if count == 0 {
         let analyzedCount = (try? await mcpServer.getAnalyzedChunkCount(repoPath: path)) ?? 0
         if analyzedCount > 0 {
-          enrichResult = "All \(analyzedCount) analyzed chunks already enriched"
+          let repoTotal = liveChunkCount ?? 0
+          if repoTotal > 0, analyzedCount < repoTotal {
+            enrichResult = "All \(analyzedCount) analyzed chunks enriched (\(analyzedCount) of \(repoTotal) total)"
+          } else {
+            enrichResult = "All \(analyzedCount) analyzed chunks already enriched"
+          }
         } else {
           enrichResult = "No analyzed chunks found — run Analyze first"
         }
