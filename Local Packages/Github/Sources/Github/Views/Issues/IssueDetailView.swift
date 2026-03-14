@@ -17,9 +17,3 @@ struct IssueDetailView: View {
     }
   }
 }
-
-//struct IssueDetailView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    IssueDetailView(issue: Github.Issue())
-//  }
-//}

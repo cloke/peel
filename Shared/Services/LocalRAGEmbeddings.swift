@@ -240,10 +240,6 @@ protocol LocalRAGTokenizer: Sendable {
   func encode(_ text: String, maxLength: Int) -> ([Int32], [Int32])
 }
 
-/// Protocol for batch tokenization - critical for performance
-protocol LocalRAGBatchTokenizer: LocalRAGTokenizer {
-  func encodeBatch(_ texts: [String], maxLength: Int) -> [([Int32], [Int32])]
-}
 struct SimpleVocabTokenizer: LocalRAGTokenizer {
   private let vocab: [String: Int]
   private let unknownId: Int

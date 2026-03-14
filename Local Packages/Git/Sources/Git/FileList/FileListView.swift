@@ -188,10 +188,3 @@ struct FileListView: View {
     }
   }
 }
-
-//struct FileListView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    FileListView()
-//      .environmentObject(Model.Repository())
-//  }
-//}

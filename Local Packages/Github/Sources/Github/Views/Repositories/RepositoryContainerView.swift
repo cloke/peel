@@ -45,9 +45,3 @@ public struct RepositoryContainerView: View {
     }
   }
 }
-
-//struct RepositoryView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    Github.RepositorView(organization: "Test", repository: "Test")
-//  }
-//}

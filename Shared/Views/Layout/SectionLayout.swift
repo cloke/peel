@@ -7,13 +7,6 @@
 
 import SwiftUI
 
-enum LayoutSpacing {
-  static let page: CGFloat = 20
-  static let section: CGFloat = 16
-  static let item: CGFloat = 10
-  static let indent: CGFloat = 20
-}
-
 struct SectionHeader: View {
   enum Style {
     case primary

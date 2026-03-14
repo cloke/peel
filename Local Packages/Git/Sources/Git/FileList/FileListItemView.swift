@@ -60,11 +60,3 @@ struct FileListItemView: View {
     }
   }
 }
-
-//struct FileListItemView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    FileListItemView()
-//  }
-//}
-
-

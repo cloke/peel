@@ -50,10 +50,3 @@ struct OrganizationPullRequestsListView: View {
     }
   }
 }
-
-
-//struct OrganizationPullRequestsListView_Previews: PreviewProvider {
-//    static var previews: some View {
-//      OrganizationPullRequestsListView()
-//    }
-//}
