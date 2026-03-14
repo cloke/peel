@@ -188,4 +188,19 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     await refreshRagSummary()
     return result
   }
+
+  func markSyncCompleted(direction: RAGArtifactSyncDirection) async {
+    guard let current = ragArtifactStatus else { return }
+    let updated = RAGArtifactStatus(
+      manifestVersion: current.manifestVersion,
+      totalBytes: current.totalBytes,
+      lastSyncedAt: Date(),
+      lastSyncDirection: direction,
+      repoCount: current.repoCount,
+      lastIndexedAt: current.lastIndexedAt,
+      staleReason: current.staleReason
+    )
+    ragArtifactStatus = updated
+    SwarmCoordinator.shared.updateLocalRagArtifactStatus(updated)
+  }
 }

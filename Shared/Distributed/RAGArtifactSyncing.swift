@@ -36,4 +36,7 @@ protocol RAGArtifactSyncDelegate: AnyObject, Sendable {
   func createRepoOverlayBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoOverlayBundle?
   /// Import an overlay bundle onto locally-indexed chunks.
   func applyRepoOverlayBundle(_ bundle: RAGRepoOverlayBundle) async throws -> RAGRepoImporter.OverlayImportResult
+
+  /// Called after a successful sync to update lastSyncedAt/direction in the local status.
+  func markSyncCompleted(direction: RAGArtifactSyncDirection) async
 }

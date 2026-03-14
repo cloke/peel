@@ -2044,6 +2044,7 @@ public final class SwarmCoordinator {
           state.resultSummary = summary
           state.remoteEmbeddingModel = result.remoteEmbeddingModel
         }
+        await ragSyncDelegate.markSyncCompleted(direction: .pull)
       } else if manifest.version.hasPrefix("repo-overlay-") {
         // Overlay sync: embeddings + analysis only, matched against locally-indexed chunks
         let tempURL = transfer.tempURL
@@ -2076,6 +2077,7 @@ public final class SwarmCoordinator {
           state.resultSummary = summary
           state.remoteEmbeddingModel = overlayBundle.manifest.embeddingModel
         }
+        await ragSyncDelegate.markSyncCompleted(direction: .pull)
       } else {
         // Full DB sync (legacy path)
         try await ragSyncDelegate.applyRagArtifactBundle(
