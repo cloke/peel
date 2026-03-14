@@ -41,6 +41,7 @@ enum SidebarSelection: Hashable {
   case activityItem(UUID)  // Non-chain activity item → shows dashboard
   case chain(UUID)
   case prReviews
+  case reviewDashboard
   case templates
   case agentRuns
   case worktrees
@@ -173,7 +174,7 @@ struct ContentView: View {
       if let sel = newValue {
         switch sel {
         case .repo, .repoCommandCenter: currentSection = .repositories
-        case .activityDashboard, .activityItem, .chain, .prReviews, .templates,
+        case .activityDashboard, .activityItem, .chain, .prReviews, .reviewDashboard, .templates,
              .agentRuns, .worktrees: currentSection = .activity
         case .chat: currentSection = .activity
         case .swarmConsole: currentSection = .activity
@@ -277,6 +278,9 @@ struct ContentView: View {
         Label("PR Reviews", systemImage: "text.badge.checkmark")
           .badge(prReviewCount)
           .tag(SidebarSelection.prReviews)
+        Label("Review Dashboard", systemImage: "checklist.checked")
+          .badge(pendingReviewCount)
+          .tag(SidebarSelection.reviewDashboard)
         Label("Templates", systemImage: "rectangle.stack")
           .tag(SidebarSelection.templates)
         agentRunsSidebarRow
@@ -477,6 +481,9 @@ struct ContentView: View {
     case .prReviews:
       RunsListView(mcpServer: mcpServer)
 
+    case .reviewDashboard:
+      ReviewDashboardView(mcpServer: mcpServer)
+
     case .templates:
       TemplateBrowserDetailView { chainId in
         sidebarSelection = .chain(chainId)
@@ -529,6 +536,10 @@ struct ContentView: View {
 
   private var prReviewCount: Int {
     mcpServer.prReviewQueue.activeItems.count
+  }
+
+  private var pendingReviewCount: Int {
+    mcpServer.parallelWorktreeRunner?.runs.reduce(0) { $0 + $1.pendingReviewCount } ?? 0
   }
 
   private var wanWorkers: [FirestoreWorker] {
