@@ -1256,7 +1256,10 @@ public final class FirebaseService {
     heartbeatTasks[swarmId] = Task { [weak self] in
       while !Task.isCancelled {
         await self?.sendHeartbeat(swarmId: swarmId, workerId: workerId)
-        try? await Task.sleep(for: .seconds(30))
+        // 120s interval keeps workers visible (5-min staleness threshold)
+        // while staying well within the free tier write quota.
+        // 7 workers × 720 heartbeats/day = 5,040 writes (was 20,160 at 30s).
+        try? await Task.sleep(for: .seconds(120))
       }
     }
   }

@@ -203,8 +203,9 @@ public final class SwarmCoordinator {
   /// Interval between heartbeats
   private let heartbeatInterval: Duration = .seconds(10)
 
-  /// How long before a worker is considered stale (no heartbeat)
-  private let heartbeatStaleThreshold: TimeInterval = 35  // ~3 missed heartbeats
+  /// How long before a worker is considered stale (no heartbeat).
+  /// Must be > 2× heartbeat interval (120s) to tolerate one missed beat.
+  private let heartbeatStaleThreshold: TimeInterval = 300
   
   /// Result from a direct command execution
   public struct DirectCommandResult: Sendable {

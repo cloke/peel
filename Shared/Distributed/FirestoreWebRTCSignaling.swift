@@ -211,15 +211,49 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
 
   // MARK: - ICE Candidates
 
+  /// Buffer for outgoing candidates. Flushed as a single Firestore write
+  /// after a short delay, reducing 5-10 individual writes to 1-2.
+  private var candidateBuffer: [[String: Any]] = []
+  private var candidateFlushTask: Task<Void, Never>?
+
   func sendCandidate(_ candidate: ICECandidateMessage) async throws {
     var data: [String: Any] = [
       "sdp": candidate.sdp,
       "sdpMid": candidate.sdpMid as Any,
       "sdpMLineIndex": candidate.sdpMLineIndex,
-      "createdAt": FieldValue.serverTimestamp(),
     ]
     if let sessionId { data["sessionId"] = sessionId }
-    try await myCandidatesCollection.addDocument(data: data)
+    candidateBuffer.append(data)
+
+    // Flush after a short delay to batch multiple candidates into one write.
+    // ICE gathering typically produces 4-8 candidates within ~200ms.
+    candidateFlushTask?.cancel()
+    candidateFlushTask = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(500))
+      guard !Task.isCancelled else { return }
+      await self?.flushCandidates()
+    }
+  }
+
+  /// Write all buffered candidates as a single Firestore document.
+  private func flushCandidates() async {
+    guard !candidateBuffer.isEmpty else { return }
+    let batch = candidateBuffer
+    candidateBuffer.removeAll()
+
+    do {
+      // Write candidates as an array in a single document keyed by batch timestamp.
+      // This turns N individual writes into 1.
+      let batchDoc = myCandidatesCollection.document("batch-\(Int(Date().timeIntervalSince1970 * 1000))")
+      try await batchDoc.setData([
+        "candidates": batch,
+        "count": batch.count,
+        "createdAt": FieldValue.serverTimestamp(),
+      ])
+      logger.info("[signaling] flushed \(batch.count) ICE candidates in 1 write")
+    } catch {
+      logger.warning("[signaling] failed to flush \(batch.count) candidates: \(error.localizedDescription, privacy: .public)")
+    }
   }
 
   func receiveCandidates() -> AsyncStream<ICECandidateMessage> {
@@ -229,32 +263,41 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
       var rejected = 0
       let listener = remoteCandidatesCollection.addSnapshotListener { [weak self] snapshot, _ in
         guard let snapshot else { return }
-        // Use the sessionId that was current when the stream was created,
-        // or check the latest one (responder may set it after offer arrives).
         let sid = currentSessionId ?? self?.sessionId
         for change in snapshot.documentChanges where change.type == .added {
-          let data = change.document.data()
+          let docData = change.document.data()
 
-          // Filter out candidates from previous sessions.
-          // If we have a sessionId, only accept candidates tagged with the same one.
-          if let sid {
-            let candidateSid = data["sessionId"] as? String
-            if candidateSid != sid {
-              rejected += 1
-              continue
-            }
+          // Support batched candidates (array in single doc) and legacy individual docs
+          let candidateEntries: [[String: Any]]
+          if let batch = docData["candidates"] as? [[String: Any]] {
+            candidateEntries = batch
+          } else if docData["sdp"] is String {
+            candidateEntries = [docData]
+          } else {
+            continue
           }
 
-          guard let sdp = data["sdp"] as? String,
-            let sdpMLineIndex = data["sdpMLineIndex"] as? Int
-          else { continue }
-          let sdpMid = data["sdpMid"] as? String
-          continuation.yield(ICECandidateMessage(
-            sdp: sdp,
-            sdpMid: sdpMid,
-            sdpMLineIndex: Int32(sdpMLineIndex)
-          ))
-          accepted += 1
+          for data in candidateEntries {
+            // Filter by sessionId
+            if let sid {
+              let candidateSid = data["sessionId"] as? String
+              if candidateSid != sid {
+                rejected += 1
+                continue
+              }
+            }
+
+            guard let sdp = data["sdp"] as? String,
+              let sdpMLineIndex = data["sdpMLineIndex"] as? Int
+            else { continue }
+            let sdpMid = data["sdpMid"] as? String
+            continuation.yield(ICECandidateMessage(
+              sdp: sdp,
+              sdpMid: sdpMid,
+              sdpMLineIndex: Int32(sdpMLineIndex)
+            ))
+            accepted += 1
+          }
         }
         if rejected > 0 {
           self?.logger.notice("[signaling] candidates: \(accepted) accepted, \(rejected) stale rejected")
@@ -272,27 +315,22 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   // MARK: - Cleanup
 
   func cleanup() async {
+    // Flush any buffered candidates before tearing down
+    candidateFlushTask?.cancel()
+    await flushCandidates()
+
     // Remove listeners
     for listener in listeners {
       listener.remove()
     }
     listeners.removeAll()
 
-    // Delete signaling documents after a delay
+    // Delete signaling documents after a delay.
+    // Keep it minimal — just delete the top-level docs.
+    // Candidate subcollection docs expire naturally.
     Task {
       try? await Task.sleep(for: .seconds(10))
-      // Delete my doc and its candidates subcollection
-      let myCandidates = try? await self.myCandidatesCollection.getDocuments()
-      for doc in myCandidates?.documents ?? [] {
-        try? await doc.reference.delete()
-      }
       try? await self.myDocRef.delete()
-
-      // Delete remote doc and its candidates
-      let remoteCandidates = try? await self.remoteCandidatesCollection.getDocuments()
-      for doc in remoteCandidates?.documents ?? [] {
-        try? await doc.reference.delete()
-      }
       try? await self.remoteDocRef.delete()
     }
   }
