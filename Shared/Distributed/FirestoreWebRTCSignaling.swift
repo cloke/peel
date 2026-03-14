@@ -78,8 +78,17 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   // MARK: - Offers & Answers
 
   func sendOffer(_ sdp: String) async throws {
-    // Delete any stale remote answer doc so we can detect a fresh one
+    // Delete stale signaling state from previous sessions so the fresh
+    // receiveCandidates() listener doesn't pick up old ICE candidates.
     try? await remoteDocRef.delete()
+    let remoteCandidates = try? await remoteCandidatesCollection.getDocuments()
+    for doc in remoteCandidates?.documents ?? [] {
+      try? await doc.reference.delete()
+    }
+    let myCandidates = try? await myCandidatesCollection.getDocuments()
+    for doc in myCandidates?.documents ?? [] {
+      try? await doc.reference.delete()
+    }
 
     let start = ContinuousClock.now
     try await myDocRef.setData([

@@ -29,6 +29,14 @@ public struct DiscoveredPeer: Identifiable, Sendable {
     resolvedAddress != nil && resolvedPort != nil
   }
   
+  /// Whether the TXT record delivered the real deviceId (UUID).
+  /// Before TXT arrives, `id` falls back to the Bonjour service name
+  /// (e.g. "alissas-macbook-pro.local"), which can't be used for
+  /// Firestore signaling because the remote peer expects its UUID.
+  public var hasDeviceId: Bool {
+    txtRecord["deviceId"] != nil && !txtRecord["deviceId"]!.isEmpty
+  }
+  
   /// Custom display name from TXT record, or falls back to name
   public var displayName: String {
     txtRecord["displayName"] ?? name

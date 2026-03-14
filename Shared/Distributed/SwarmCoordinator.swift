@@ -882,6 +882,14 @@ public final class SwarmCoordinator {
           // delivers the TXT record.
           if connectedNames.contains(peer.name) { continue }
 
+          // Skip peers whose TXT record hasn't delivered the real deviceId yet.
+          // Without the UUID, the Firestore signaling doc path will use the
+          // Bonjour service name, which the remote peer won't be listening for.
+          guard peer.hasDeviceId else {
+            self.logger.debug("LAN reconnect: skipping \(peer.name, privacy: .public) — waiting for TXT record with deviceId")
+            continue
+          }
+
           // Exponential backoff: skip this cycle if not enough time has passed
           let failures = failureCounts[peerId, default: 0]
           // backoff: 0, 1, 3, 7, 15 cycles (i.e. 0s, 15s, 45s, 105s, 225s)
