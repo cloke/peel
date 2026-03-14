@@ -90,10 +90,13 @@ struct RAGTabView: View {
       handlePendingRAGUIActionIfNeeded()
 
       // Auto-maintain for tracked repos: trigger reindex/analyze/enrich if needed
+      // When last sync was a pull from a peer, skip the unenriched check —
+      // the peer already enriched; we only need to keep index/analysis fresh.
       if repo.isTracked, !isAutoMaintaining, !isAnalyzing, !isEnriching, !isCurrentlyIndexing {
         let isStale = repo.ragStatus == .stale
         let hasUnanalyzed = (analysisState?.unanalyzedCount ?? 0) > 0
-        let hasUnenriched = max(0, (analysisState?.analyzedCount ?? 0) - enrichedChunks) > 0
+        let lastSyncWasPull = swarm.localRagArtifactStatus?.lastSyncDirection == .pull
+        let hasUnenriched = !lastSyncWasPull && max(0, (analysisState?.analyzedCount ?? 0) - enrichedChunks) > 0
         if isStale || hasUnanalyzed || hasUnenriched {
           await autoMaintain()
         }
@@ -1288,12 +1291,16 @@ struct RAGTabView: View {
       await analyzeChunks()
     }
 
-    // Step 3: Enrich unenriched chunks
-    await refreshAnalysisStatus()
-    let unenriched = max(0, (analysisState?.analyzedCount ?? 0) - enrichedChunks)
-    if unenriched > 0 {
-      autoMaintainStep = "Enriching embeddings..."
-      await enrichEmbeddings()
+    // Step 3: Enrich unenriched chunks (skip when RAG was pulled from a peer —
+    // the peer already enriched; re-enriching locally is redundant and expensive)
+    let lastSyncWasPull = swarm.localRagArtifactStatus?.lastSyncDirection == .pull
+    if !lastSyncWasPull {
+      await refreshAnalysisStatus()
+      let unenriched = max(0, (analysisState?.analyzedCount ?? 0) - enrichedChunks)
+      if unenriched > 0 {
+        autoMaintainStep = "Enriching embeddings..."
+        await enrichEmbeddings()
+      }
     }
 
     autoMaintainStep = nil
