@@ -215,6 +215,21 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
     channel.readyState == .open
   }
 
+  /// Bytes currently queued in the SCTP send buffer.
+  public var bufferedAmount: UInt64 {
+    channel.bufferedAmount
+  }
+
+  /// Wait until the SCTP send buffer is empty (all bytes acknowledged by the
+  /// remote peer). Returns once `bufferedAmount == 0` or after `timeout`.
+  public func waitUntilFlushed(timeout: Duration = .seconds(5)) async {
+    let start = ContinuousClock.now
+    while channel.bufferedAmount > 0 {
+      if ContinuousClock.now - start > timeout { break }
+      try? await Task.sleep(for: .milliseconds(50))
+    }
+  }
+
   // MARK: - Send
 
   private static let bufferHighWaterMark: UInt64 = 256 * 1024

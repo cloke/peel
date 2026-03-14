@@ -283,6 +283,12 @@ public actor PeerSession {
     logger.notice("Disconnected from peer \(self.peerId, privacy: .public)")
   }
 
+  /// Wait for the transfer channel's SCTP send buffer to empty.
+  public func waitForTransferFlush(timeout: Duration = .seconds(5)) async {
+    guard let channel = transferChannel else { return }
+    await channel.waitUntilFlushed(timeout: timeout)
+  }
+
   // MARK: - ICE Monitoring
 
   private func setupICEMonitoring(_ client: WebRTCClient) {

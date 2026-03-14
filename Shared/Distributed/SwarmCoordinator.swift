@@ -1824,6 +1824,12 @@ public final class SwarmCoordinator {
           chunkIndex += 1
         }
 
+        // Wait for the transfer channel's SCTP buffer to drain before
+        // sending completion on the MCP channel. The two channels are
+        // independent SCTP streams — without this delay the completion
+        // message can arrive before the final chunks.
+        await waitForTransferChannelDrain(peerId: peer.id)
+
         try await sendMessage(.ragArtifactsComplete(id: transferId), to: peer.id)
         updateRagTransfer(transferId) { state in
           state.status = .complete
@@ -1873,6 +1879,8 @@ public final class SwarmCoordinator {
         }
         chunkIndex += 1
       }
+
+      await waitForTransferChannelDrain(peerId: peer.id)
 
       try await sendMessage(.ragArtifactsComplete(id: transferId), to: peer.id)
       updateRagTransfer(transferId) { state in
@@ -1957,6 +1965,17 @@ public final class SwarmCoordinator {
 
   private func handleRagArtifactsComplete(id: UUID, from peerId: String) async {
     guard let transfer = incomingRagTransfers[id] else { return }
+
+    // Grace period: the completion message travels on the ordered MCP channel
+    // while chunks travel on the unordered transfer channel. The completion
+    // can arrive before the final chunks. Wait up to 2s for stragglers.
+    if let expected = transfer.expectedChunks, transfer.receivedChunks < expected {
+      for _ in 0..<20 {
+        try? await Task.sleep(for: .milliseconds(100))
+        if transfer.receivedChunks >= expected { break }
+      }
+    }
+
     transfer.fileHandle?.closeFile()
     transfer.fileHandle = nil
 
@@ -2120,6 +2139,18 @@ public final class SwarmCoordinator {
       try? await Task.sleep(for: .milliseconds(500))
       logger.info("Manifest ack timeout for \(transferId), proceeding with 500ms fallback delay")
     }
+  }
+
+  /// Wait for the transfer channel's SCTP buffer to drain before sending the
+  /// completion message on the MCP channel. The two are independent SCTP
+  /// streams — without this, the ordered MCP channel can deliver the
+  /// completion before the unordered transfer channel finishes flushing.
+  private func waitForTransferChannelDrain(peerId: String) async {
+    guard let session = peerSessionManager.session(for: peerId) else {
+      try? await Task.sleep(for: .seconds(1))
+      return
+    }
+    await session.waitForTransferFlush(timeout: .seconds(5))
   }
 
   private func sendRagArtifactError(transferId: UUID, to peerId: String, message: String) async {
