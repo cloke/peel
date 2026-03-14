@@ -1301,22 +1301,36 @@ struct RAGTabView: View {
     state?.analysisStartTime = Date()
     let batchStart = Date()
     do {
-      var totalCount = 0
-      var remaining = 500
-      for path in paths where remaining > 0 {
-        let count = try await mcpServer.analyzeRagChunks(
-          repoPath: path,
-          limit: remaining
-        ) { current, total in
-          Task { @MainActor in
-            state?.batchProgress = (current, total)
+      var grandTotal = 0
+      var keepGoing = true
+      while keepGoing {
+        var batchCount = 0
+        var remaining = 500
+        for path in paths where remaining > 0 {
+          let count = try await mcpServer.analyzeRagChunks(
+            repoPath: path,
+            limit: remaining
+          ) { current, total in
+            Task { @MainActor in
+              state?.batchProgress = (current, total)
+            }
+          }
+          batchCount += count
+          remaining -= count
+        }
+        grandTotal += batchCount
+        if let state {
+          state.analyzedCount += batchCount
+          state.unanalyzedCount = max(0, state.unanalyzedCount - batchCount)
+          let elapsed = Date().timeIntervalSince(batchStart)
+          if elapsed > 0, grandTotal > 0 {
+            state.chunksPerSecond = Double(grandTotal) / elapsed
           }
         }
-        totalCount += count
-        remaining -= count
+        keepGoing = batchCount > 0
       }
-      analyzedChunks = totalCount
-      if totalCount == 0 {
+      analyzedChunks = grandTotal
+      if grandTotal == 0 {
         let totalAnalyzed = state?.analyzedCount ?? 0
         if totalAnalyzed > 0 {
           analyzeSuccess = "All \(totalAnalyzed) chunks already analyzed"
@@ -1324,15 +1338,7 @@ struct RAGTabView: View {
           analyzeSuccess = "No chunks to analyze — index first"
         }
       } else {
-        analyzeSuccess = "Analyzed \(totalCount) chunks"
-      }
-      if let state {
-        state.analyzedCount += totalCount
-        state.unanalyzedCount = max(0, state.unanalyzedCount - totalCount)
-        let elapsed = Date().timeIntervalSince(batchStart)
-        if elapsed > 0, totalCount > 0 {
-          state.chunksPerSecond = Double(totalCount) / elapsed
-        }
+        analyzeSuccess = "Analyzed \(grandTotal) chunks"
       }
     } catch {
       analyzeError = error.localizedDescription
@@ -1354,22 +1360,28 @@ struct RAGTabView: View {
     enrichResult = nil
     enrichBatchProgress = nil
     do {
-      var totalCount = 0
-      var remaining = 500
-      for path in paths where remaining > 0 {
-        let count = try await mcpServer.enrichRagEmbeddings(
-          repoPath: path,
-          limit: remaining
-        ) { current, total in
-          Task { @MainActor in
-            enrichBatchProgress = (current: current, total: total)
+      var grandTotal = 0
+      var keepGoing = true
+      while keepGoing {
+        var batchCount = 0
+        var remaining = 500
+        for path in paths where remaining > 0 {
+          let count = try await mcpServer.enrichRagEmbeddings(
+            repoPath: path,
+            limit: remaining
+          ) { current, total in
+            Task { @MainActor in
+              enrichBatchProgress = (current: current, total: total)
+            }
           }
+          batchCount += count
+          remaining -= count
         }
-        totalCount += count
-        remaining -= count
+        grandTotal += batchCount
+        keepGoing = batchCount > 0
       }
-      enrichedChunks = totalCount
-      if totalCount == 0 {
+      enrichedChunks = grandTotal
+      if grandTotal == 0 {
         var totalAnalyzed = 0
         for path in paths {
           totalAnalyzed += (try? await mcpServer.getAnalyzedChunkCount(repoPath: path)) ?? 0
@@ -1380,7 +1392,7 @@ struct RAGTabView: View {
           enrichResult = "No analyzed chunks found — run Analyze first"
         }
       } else {
-        enrichResult = "Enriched \(totalCount) chunks"
+        enrichResult = "Enriched \(grandTotal) chunks"
       }
       await refreshAnalysisStatus()
     } catch {
