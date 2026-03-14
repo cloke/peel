@@ -884,7 +884,7 @@ public final class SwarmCoordinator {
 
           // If TXT record hasn't delivered the real deviceId yet, try to
           // resolve via Firestore worker list (match by hostname).
-          var effectivePeerId = peerId
+          let effectivePeerId: String
           if !peer.hasDeviceId {
             if let match = FirebaseService.shared.swarmWorkers.first(where: { $0.deviceName == peer.name }) {
               effectivePeerId = match.id
@@ -893,6 +893,8 @@ public final class SwarmCoordinator {
               self.logger.info("LAN reconnect: skipping \(peer.name, privacy: .public) — no TXT deviceId and no Firestore match")
               continue
             }
+          } else {
+            effectivePeerId = peerId
           }
 
           // Skip if already connected under the resolved ID
