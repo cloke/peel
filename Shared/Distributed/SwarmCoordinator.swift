@@ -1084,8 +1084,12 @@ public final class SwarmCoordinator {
               let transferInfo: (fileHandle: FileHandle, chunkSizeHint: Int?, manifestBytes: Int?, receivedBytes: Int, alreadyHas: Bool, peerId: String)? = await MainActor.run { [weak self] in
                 guard let self, let transfer = self.incomingRagTransfers[transferId] else { return nil }
                 if transfer.receivedChunkIndices.contains(index) { return nil }
+                guard let fileHandle = transfer.fileHandle else {
+                  self.logger.error("RAG transfer \(transferId): fileHandle is nil for chunk \(index)/\(total)")
+                  return nil
+                }
                 return (
-                  fileHandle: transfer.fileHandle!,
+                  fileHandle: fileHandle,
                   chunkSizeHint: transfer.chunkSizeHint,
                   manifestBytes: transfer.manifest?.totalBytes,
                   receivedBytes: transfer.receivedBytes,
@@ -2015,8 +2019,11 @@ public final class SwarmCoordinator {
       if manifest.version.hasPrefix("repo-sync-") {
         // Read and decode off main actor to avoid blocking UI
         let tempURL = transfer.tempURL
-        let repoBundle = try await Task.detached(priority: .userInitiated) {
-          let jsonData = try Data(contentsOf: tempURL)
+        let repoBundle = try await Task.detached(priority: .userInitiated) { [logger] in
+          let fileSize = (try? FileManager.default.attributesOfItem(atPath: tempURL.path)[.size] as? Int) ?? 0
+          logger.info("RAG repo-sync bundle: loading \(fileSize) bytes from \(tempURL.lastPathComponent)")
+          let jsonData = try Data(contentsOf: tempURL, options: .mappedIfSafe)
+          defer { try? FileManager.default.removeItem(at: tempURL) }
           return try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
         }.value
         // Always force-import remote embeddings — vectorSearchWithDimensionCheck
@@ -2048,8 +2055,11 @@ public final class SwarmCoordinator {
       } else if manifest.version.hasPrefix("repo-overlay-") {
         // Overlay sync: embeddings + analysis only, matched against locally-indexed chunks
         let tempURL = transfer.tempURL
-        let overlayBundle = try await Task.detached(priority: .userInitiated) {
-          let jsonData = try Data(contentsOf: tempURL)
+        let overlayBundle = try await Task.detached(priority: .userInitiated) { [logger] in
+          let fileSize = (try? FileManager.default.attributesOfItem(atPath: tempURL.path)[.size] as? Int) ?? 0
+          logger.info("RAG repo-overlay bundle: loading \(fileSize) bytes from \(tempURL.lastPathComponent)")
+          let jsonData = try Data(contentsOf: tempURL, options: .mappedIfSafe)
+          defer { try? FileManager.default.removeItem(at: tempURL) }
           return try JSONDecoder().decode(RAGRepoOverlayBundle.self, from: jsonData)
         }.value
         let result = try await ragSyncDelegate.applyRepoOverlayBundle(overlayBundle)
