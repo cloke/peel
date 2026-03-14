@@ -1067,6 +1067,9 @@ extension MCPServerService {
     if rebuildToolsHandler.supportedTools.contains(resolvedName) {
       return await rebuildToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    if metaToolsHandler.supportedTools.contains(resolvedName) {
+      return await metaToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
     if gitToolsHandler.supportedTools.contains(resolvedName) {
       return await gitToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }

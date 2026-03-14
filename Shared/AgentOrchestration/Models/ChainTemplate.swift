@@ -312,6 +312,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   private static let uxAuditId                = UUID(uuidString: "A0000001-0012-4000-8000-000000000012")!
   private static let uxRegressionId           = UUID(uuidString: "A0000001-0013-4000-8000-000000000013")!
   private static let uxFlowTestId             = UUID(uuidString: "A0000001-0014-4000-8000-000000000014")!
+  private static let metaAgentId               = UUID(uuidString: "A0000001-0015-4000-8000-000000000015")!
 
   // MARK: - Auto-detect Shell Commands
   // Fallback commands used when no .peel/profile.json buildCommand is configured.
@@ -1115,6 +1116,52 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         isBuiltIn: true,
         category: .specialized,
         completionCriteria: .noValidation
+      ),
+
+      // Meta-Agent: Self-improvement loop — analyze, plan, dispatch sub-chains
+      ChainTemplate(
+        id: metaAgentId,
+        name: "Meta-Agent",
+        description: "Self-improvement loop: reads mission, analyzes codebase via RAG, identifies work, dispatches sub-chains (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .planner,
+            model: .bestStandard,
+            name: "Meta Planner",
+            customInstructions: """
+              You are a Meta-Agent planner. Your job is to identify the highest-value
+              improvements for this project and create implementation tasks.
+              
+              ## Steps
+              1. Read the project mission: call `mission.get` with the repo path
+              2. Search the codebase: use `rag.search` to understand structure and find issues
+              3. Check open GitHub issues: use `github.issue.list` for existing work items
+              4. Identify 3-5 high-value, mission-aligned improvements
+              5. For each, write a detailed implementation prompt
+              
+              ## Output
+              Output your findings as a structured plan. Each task should be:
+              - Specific enough for a single coding agent to complete
+              - Aligned with the project mission
+              - Independent of other tasks (no ordering dependencies)
+              
+              Focus on: code quality, dead code removal, missing tests,
+              deprecated pattern migration, and incomplete features.
+              """
+          ),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer B"),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Build Check",
+            stepType: .gate,
+            command: autoDetectBuildCommand
+          ),
+          AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Quality Reviewer")
+        ],
+        isBuiltIn: true,
+        category: .specialized
       )
     ]
 
