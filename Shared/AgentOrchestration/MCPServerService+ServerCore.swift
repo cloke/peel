@@ -1073,6 +1073,9 @@ extension MCPServerService {
     if reviewToolsHandler.supportedTools.contains(resolvedName) {
       return await reviewToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    if sprintToolsHandler.supportedTools.contains(resolvedName) {
+      return await sprintToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
     if gitToolsHandler.supportedTools.contains(resolvedName) {
       return await gitToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
