@@ -94,7 +94,7 @@ public actor PeerSession {
       let transfer = try await newClient.openChannel(label: Self.transferLabel, config: .bulkTransfer)
       let heartbeat = try await newClient.openChannel(label: Self.heartbeatLabel, config: .unreliable)
       let chat = try await newClient.openChannel(label: Self.chatLabel)
-      logger.notice("PeerSession[\(self.peerId.prefix(8))]: channels created, starting ICE + SDP exchange")
+      logger.notice("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: channels created, starting ICE + SDP exchange")
 
       // ICE candidate forwarding — kept alive for connection lifetime
       localCandidateTask = Task {
@@ -108,30 +108,30 @@ public actor PeerSession {
           try? await newClient.addICECandidate(candidate)
           count += 1
           if count <= 3 || count % 10 == 0 {
-            logger.info("PeerSession[\(peerId.prefix(8))]: added remote ICE candidate #\(count)")
+            logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: added remote ICE candidate #\(count)")
           }
         }
-        logger.info("PeerSession[\(peerId.prefix(8))]: remote candidate stream ended (\(count) total)")
+        logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: remote candidate stream ended (\(count) total)")
       }
 
       // SDP offer/answer exchange
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: creating SDP offer")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: creating SDP offer")
       let offerSDP = try await newClient.createOffer()
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: sending SDP offer to Firestore")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: sending SDP offer to Firestore")
       try await signaling.sendOffer(offerSDP)
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: waiting for SDP answer")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for SDP answer")
       let answerSDP = try await signaling.waitForAnswer(timeout: .seconds(30))
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: received SDP answer, setting remote description")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: received SDP answer, setting remote description")
       try await newClient.setRemoteAnswer(answerSDP)
 
       // Wait for control and bulk-transfer channels to open before treating the
       // persistent session as ready. The first RAG chunk can otherwise race the
       // transfer channel coming fully online.
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: waiting for MCP channel open")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for MCP channel open")
       try await mcp.waitForOpen(timeout: .seconds(30))
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: waiting for transfer channel open")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for transfer channel open")
       try await transfer.waitForOpen(timeout: .seconds(30))
-      logger.notice("PeerSession[\(self.peerId.prefix(8))]: all channels open")
+      logger.notice("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: all channels open")
 
       mcpChannel = mcp
       transferChannel = transfer
@@ -143,9 +143,9 @@ public actor PeerSession {
       setupICEMonitoring(newClient)
       startHeartbeat()
 
-      logger.notice("Connected to peer \(self.peerId)")
+      logger.notice("Connected to peer \(self.peerId, privacy: .public)")
     } catch {
-      logger.error("PeerSession[\(self.peerId.prefix(8))]: connect failed — \(error.localizedDescription)")
+      logger.error("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: connect failed — \(error.localizedDescription, privacy: .public)")
       updateState(.failed)
       client?.close()
       client = nil
@@ -169,7 +169,7 @@ public actor PeerSession {
     do {
       // Tell the client we're using named channels (so didOpen routes to handles)
       await newClient.enableNamedChannels()
-      logger.notice("PeerSession[\(self.peerId.prefix(8))]: accepting connection, enabling named channels")
+      logger.notice("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: accepting connection, enabling named channels")
 
       // ICE candidate forwarding — kept alive for connection lifetime
       localCandidateTask = Task {
@@ -183,33 +183,33 @@ public actor PeerSession {
           try? await newClient.addICECandidate(candidate)
           count += 1
           if count <= 3 || count % 10 == 0 {
-            logger.info("PeerSession[\(peerId.prefix(8))]: added remote ICE candidate #\(count)")
+            logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: added remote ICE candidate #\(count)")
           }
         }
-        logger.info("PeerSession[\(peerId.prefix(8))]: remote candidate stream ended (\(count) total)")
+        logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: remote candidate stream ended (\(count) total)")
       }
 
       // Receive offer, create answer
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: waiting for SDP offer")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for SDP offer")
       let offerSDP = try await signaling.waitForOffer(timeout: .seconds(30))
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: received SDP offer, setting remote description")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: received SDP offer, setting remote description")
       try await newClient.setRemoteOffer(offerSDP)
       let answerSDP = try await newClient.createAnswer()
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: sending SDP answer")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: sending SDP answer")
       try await signaling.sendAnswer(answerSDP)
 
       // Wait for remote channels to arrive
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: waiting for remote channels")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for remote channels")
       let mcp = try await newClient.waitForRemoteChannel(label: Self.mcpLabel, timeout: .seconds(30))
       let transfer = try await newClient.waitForRemoteChannel(label: Self.transferLabel, timeout: .seconds(30))
       let heartbeat = try await newClient.waitForRemoteChannel(label: Self.heartbeatLabel, timeout: .seconds(30))
       let chat = try await newClient.waitForRemoteChannel(label: Self.chatLabel, timeout: .seconds(30))
 
       // Wait for channels to be fully open
-      logger.info("PeerSession[\(self.peerId.prefix(8))]: waiting for channels to open")
+      logger.info("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: waiting for channels to open")
       try await mcp.waitForOpen(timeout: .seconds(30))
       try await transfer.waitForOpen(timeout: .seconds(30))
-      logger.notice("PeerSession[\(self.peerId.prefix(8))]: all channels open")
+      logger.notice("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: all channels open")
 
       mcpChannel = mcp
       transferChannel = transfer
@@ -220,9 +220,9 @@ public actor PeerSession {
       setupICEMonitoring(newClient)
       startHeartbeat()
 
-      logger.notice("Accepted connection from peer \(self.peerId)")
+      logger.notice("Accepted connection from peer \(self.peerId, privacy: .public)")
     } catch {
-      logger.error("PeerSession[\(self.peerId.prefix(8))]: accept failed — \(error.localizedDescription)")
+      logger.error("PeerSession[\(self.peerId.prefix(8), privacy: .public)]: accept failed — \(error.localizedDescription, privacy: .public)")
       updateState(.failed)
       client?.close()
       client = nil
@@ -248,7 +248,7 @@ public actor PeerSession {
     heartbeatChannel = nil
     chatChannel = nil
     updateState(.disconnected)
-    logger.notice("Disconnected from peer \(self.peerId)")
+    logger.notice("Disconnected from peer \(self.peerId, privacy: .public)")
   }
 
   // MARK: - ICE Monitoring
@@ -277,7 +277,7 @@ public actor PeerSession {
 
   private func onICEFailed() {
     guard state == .connected else { return }
-    logger.warning("ICE connection failed for peer \(self.peerId)")
+    logger.warning("ICE connection failed for peer \(self.peerId, privacy: .public)")
     updateState(.reconnecting)
     // TODO: Implement ICE restart reconnection in Phase 1.5
     // For now, mark as failed. The PeerSessionManager will handle reconnection.

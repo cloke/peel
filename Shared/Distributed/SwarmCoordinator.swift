@@ -700,10 +700,10 @@ public final class SwarmCoordinator {
       let age = now.timeIntervalSince(status.lastHeartbeat)
       if age > heartbeatStaleThreshold {
         if activeTransferPeers.contains(peerId) {
-          logger.warning("Worker \(peerId) heartbeat stale by \(Int(age))s but has active RAG transfer — deferring disconnect")
+          logger.warning("Worker \(peerId, privacy: .public) heartbeat stale by \(Int(age))s but has active RAG transfer — deferring disconnect")
           continue
         }
-        logger.warning("Worker \(peerId) heartbeat stale by \(Int(age))s, disconnecting")
+        logger.warning("Worker \(peerId, privacy: .public) heartbeat stale by \(Int(age))s, disconnecting")
         staleWorkers.append(peerId)
       }
     }
@@ -759,7 +759,7 @@ public final class SwarmCoordinator {
     try await peerSessionManager.connectToPeer(peerId, signaling: signaling)
     startListeningOnPeerSession(peerId)
     registerWebRTCPeerAsConnected(peerId)
-    logger.info("WebRTC session established with \(peerId)")
+    logger.info("WebRTC session established with \(peerId, privacy: .public)")
   }
 
   /// Manually connect to a Firestore-discovered WAN worker via WebRTC.
@@ -892,14 +892,14 @@ public final class SwarmCoordinator {
             continue
           }
 
-          self.logger.info("LAN reconnect: retrying \(peer.name) (\(peerId)), attempt \(failures + 1)")
+          self.logger.info("LAN reconnect: retrying \(peer.name, privacy: .public) (\(peerId, privacy: .public)), attempt \(failures + 1)")
           Task {
             do {
               try await self.connectToWorker(peerId: peerId)
               failureCounts[peerId] = nil  // Reset on success
             } catch {
               failureCounts[peerId] = (failureCounts[peerId] ?? 0) + 1
-              self.logger.warning("LAN reconnect failed for \(peer.name): \(error.localizedDescription)")
+              self.logger.warning("LAN reconnect failed for \(peer.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
           }
         }
