@@ -58,7 +58,8 @@ final class ChromeSessionManager {
     if let baseDir = userDataBaseDir {
       self.userDataBaseDir = baseDir
     } else {
-      let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+      let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? FileManager.default.temporaryDirectory
       self.userDataBaseDir = appSupport.appendingPathComponent("Peel/ChromeSessions").path
     }
   }

@@ -313,12 +313,14 @@ extension MCPServerService {
       // Route through RunManager when available (unified path), fallback to direct runner
       let run: ParallelWorktreeRun
       let isPRReview = prNumber != nil && prTitle != nil && prRepoOwner != nil && prRepoName != nil
-      if isPRReview, let mgr = runManager {
+      if isPRReview, let mgr = runManager,
+         let owner = prRepoOwner, let name = prRepoName,
+         let number = prNumber, let title = prTitle {
         run = mgr.createPRReviewRun(
-          repoOwner: prRepoOwner!,
-          repoName: prRepoName!,
-          prNumber: prNumber!,
-          prTitle: prTitle!,
+          repoOwner: owner,
+          repoName: name,
+          prNumber: number,
+          prTitle: title,
           headRef: prHeadRef ?? baseBranch ?? "HEAD",
           htmlURL: prHtmlURL ?? "",
           prompt: prompt,

@@ -171,12 +171,14 @@ actor AppUpdateService {
   ///   - onProgress: Called with download progress (0.0–1.0).
   /// - Returns: Local file URL of the downloaded zip.
   func downloadUpdate(_ info: UpdateInfo, onProgress: @Sendable @escaping (Double) -> Void) async throws -> URL {
-    let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    let appSupportDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? FileManager.default.temporaryDirectory
+    let updatesDir = appSupportDir
       .appendingPathComponent("Peel")
       .appendingPathComponent("Updates")
-    try FileManager.default.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: updatesDir, withIntermediateDirectories: true)
 
-    let destURL = appSupportDir.appendingPathComponent("Peel-\(info.tagName)-macos.zip")
+    let destURL = updatesDir.appendingPathComponent("Peel-\(info.tagName)-macos.zip")
 
     // Remove any previous download
     try? FileManager.default.removeItem(at: destURL)

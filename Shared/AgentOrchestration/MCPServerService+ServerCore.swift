@@ -1028,14 +1028,14 @@ extension MCPServerService {
     if parallelToolsHandler.supportedTools.contains(resolvedName) {
       return await parallelToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if ragToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await ragToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    if let ragHandler = ragToolsHandler, ragHandler.supportedTools.contains(resolvedName) {
+      return await ragHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if codeEditToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await codeEditToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    if let codeEditHandler = codeEditToolsHandler, codeEditHandler.supportedTools.contains(resolvedName) {
+      return await codeEditHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if chainToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await chainToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    if let chainHandler = chainToolsHandler, chainHandler.supportedTools.contains(resolvedName) {
+      return await chainHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
     if swarmToolsHandler.supportedTools.contains(resolvedName) {
       return await swarmToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
@@ -1046,8 +1046,8 @@ extension MCPServerService {
     if worktreeToolsHandler.supportedTools.contains(resolvedName) {
       return await worktreeToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if githubToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await githubToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    if let githubHandler = githubToolsHandler, githubHandler.supportedTools.contains(resolvedName) {
+      return await githubHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
     if terminalToolsHandler.supportedTools.contains(resolvedName) {
       return await terminalToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
@@ -1079,8 +1079,8 @@ extension MCPServerService {
     if schedulingToolsHandler.supportedTools.contains(resolvedName) {
       return await schedulingToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if localChatToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await localChatToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    if let chatHandler = localChatToolsHandler, chatHandler.supportedTools.contains(resolvedName) {
+      return await chatHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
 
     // Fall through to inline handlers (to be extracted in future)

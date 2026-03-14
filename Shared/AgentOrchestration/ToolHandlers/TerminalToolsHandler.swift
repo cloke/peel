@@ -101,17 +101,17 @@ public final class TerminalToolsHandler: MCPToolHandler {
       safetyResult = commandSanitizer.analyze(command)
       
       // Block critical commands
-      if configuration.blockCritical && safetyResult!.shouldBlock {
+      if configuration.blockCritical, let safety = safetyResult, safety.shouldBlock {
         logger.warning("Blocked critical command: \(command, privacy: .public)")
         return (403, makeError(
           id: id,
           code: JSONRPCResponseBuilder.ErrorCode.blocked,
-          message: "Command blocked: \(safetyResult!.warnings.first ?? "Critical risk detected")",
+          message: "Command blocked: \(safety.warnings.first ?? "Critical risk detected")",
           data: [
             "command": command,
-            "riskLevel": safetyResult!.riskLevel.rawValue,
-            "risks": safetyResult!.risks.map { ["type": $0.type.rawValue, "description": $0.description] },
-            "suggestions": safetyResult!.suggestions
+            "riskLevel": safety.riskLevel.rawValue,
+            "risks": safety.risks.map { ["type": $0.type.rawValue, "description": $0.description] },
+            "suggestions": safety.suggestions
           ]
         ))
       }
@@ -122,7 +122,7 @@ public final class TerminalToolsHandler: MCPToolHandler {
     let commandToRun: String
     if !skipAdaptation && configuration.autoAdapt {
       adaptationResult = shellAdapter.adapt(command)
-      commandToRun = adaptationResult!.adaptedCommand
+      commandToRun = adaptationResult?.adaptedCommand ?? command
     } else {
       commandToRun = command
     }
