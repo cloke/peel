@@ -282,19 +282,16 @@ public actor PeerSession {
       guard let self else { return }
       await client.onICEStateChange { [weak self] state in
         Task { [weak self] in
-          await self?.handleICEStateChange(state)
+          await self?.handleICEStateChange(state.rawValue)
         }
       }
     }
   }
 
-  private nonisolated func handleICEStateChange(_ iceState: Any) async {
-    // RTCIceConnectionState is an ObjC enum, compare raw values
+  private nonisolated func handleICEStateChange(_ rawState: Int) async {
+    // RTCIceConnectionState raw values:
     // .disconnected = 5 (transient), .failed = 6 (terminal), .closed = 7
-    // We receive it as Any to avoid importing WebRTC directly
-    let stateValue = (iceState as? Int) ?? -1
-    if stateValue == 6 || stateValue == 7 {
-      // ICE failed or closed — trigger reconnect
+    if rawState == 6 || rawState == 7 {
       await self.onICEFailed()
     }
   }
