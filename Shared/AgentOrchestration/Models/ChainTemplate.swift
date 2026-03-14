@@ -313,6 +313,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   private static let uxRegressionId           = UUID(uuidString: "A0000001-0013-4000-8000-000000000013")!
   private static let uxFlowTestId             = UUID(uuidString: "A0000001-0014-4000-8000-000000000014")!
   private static let metaAgentId               = UUID(uuidString: "A0000001-0015-4000-8000-000000000015")!
+  private static let reviewerAgentId           = UUID(uuidString: "A0000001-0016-4000-8000-000000000016")!
 
   // MARK: - Auto-detect Shell Commands
   // Fallback commands used when no .peel/profile.json buildCommand is configured.
@@ -1162,6 +1163,64 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         ],
         isBuiltIn: true,
         category: .specialized
+      ),
+
+      // Reviewer Agent: Automated structured code review with confidence scores
+      ChainTemplate(
+        id: reviewerAgentId,
+        name: "Reviewer Agent",
+        description: "Automated code review with build check, quality assessment, security scan, and confidence scores (Cost: Free)",
+        steps: [
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Build Check",
+            stepType: .gate,
+            command: autoDetectBuildCommand
+          ),
+          AgentStepTemplate(
+            role: .reviewer,
+            model: .bestFree,
+            name: "Code Reviewer",
+            customInstructions: """
+              You are an automated code reviewer. Analyze the diff and produce a structured review.
+              
+              ## Review Dimensions
+              1. **Build & Tests**: Did the build pass? Are tests present and passing?
+              2. **Code Quality** (1-5): Error handling, patterns, readability, concurrency
+              3. **Security** (1-5): No secrets, no force unwraps in user paths, input validation
+              4. **Mission Alignment**: Does this change serve the project goals?
+              
+              ## Output
+              Use `review.auto` to get the review prompt template, then produce JSON:
+              ```json
+              {
+                "verdict": "approve" | "needs_changes" | "rejected",
+                "confidence": 0.0-1.0,
+                "summary": "one-line summary",
+                "categories": {
+                  "build": { "status": "pass|fail", "notes": "" },
+                  "tests": { "status": "pass|fail|unknown", "notes": "" },
+                  "codeQuality": { "score": 1-5, "issues": [] },
+                  "security": { "score": 1-5, "issues": [] },
+                  "missionAlignment": { "aligned": true|false, "reason": "" }
+                },
+                "issues": [],
+                "autoMergeRecommended": true|false
+              }
+              ```
+              
+              Rules:
+              - Focus on real bugs and security issues, not style
+              - confidence >= 0.85 with no critical issues → recommend auto-merge
+              - Be constructive — every issue should have a clear fix
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized,
+        skipReviewGate: true,
+        completionCriteria: .noValidation
       )
     ]
 

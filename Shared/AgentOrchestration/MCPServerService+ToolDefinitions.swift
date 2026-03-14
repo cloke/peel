@@ -54,6 +54,7 @@ extension MCPServerService {
     defs += missionToolsHandler.toolDefinitions     // mission.* (~2)
     defs += rebuildToolsHandler.toolDefinitions     // chain.rebuild, chain.checkpoint, chain.resume (~3)
     defs += metaToolsHandler.toolDefinitions        // meta.* (~3)
+    defs += reviewToolsHandler.toolDefinitions      // review.* (~2)
     defs += schedulingToolsHandler.toolDefinitions  // scheduling.* (~6)
 
     // --- Tier 3: Specialized / infrastructure ---
