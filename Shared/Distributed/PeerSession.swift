@@ -98,9 +98,15 @@ public actor PeerSession {
 
       // Forward local ICE candidates to the remote peer via signaling.
       // Must be registered before createOffer() so trickle candidates aren't lost.
-      localCandidateTask = Task {
+      localCandidateTask = Task { [logger = self.logger] in
         await newClient.onLocalICECandidate { candidate in
-          Task { try? await signaling.sendCandidate(candidate) }
+          Task {
+            do {
+              try await signaling.sendCandidate(candidate)
+            } catch {
+              logger.warning("Failed to send local ICE candidate: \(error.localizedDescription, privacy: .public)")
+            }
+          }
         }
       }
 
@@ -179,9 +185,15 @@ public actor PeerSession {
       // Forward local ICE candidates. Must be registered before createAnswer()
       // triggers ICE gathering. The signaling sessionId gets set during
       // waitForOffer() below, so local candidates will be tagged correctly.
-      localCandidateTask = Task {
+      localCandidateTask = Task { [logger = self.logger] in
         await newClient.onLocalICECandidate { candidate in
-          Task { try? await signaling.sendCandidate(candidate) }
+          Task {
+            do {
+              try await signaling.sendCandidate(candidate)
+            } catch {
+              logger.warning("Failed to send local ICE candidate: \(error.localizedDescription, privacy: .public)")
+            }
+          }
         }
       }
 
@@ -301,6 +313,7 @@ public actor PeerSession {
   private func startHeartbeat() {
     heartbeatTask?.cancel()
     heartbeatTask = Task { [weak self] in
+      var consecutiveFailures = 0
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(15))
         guard let self, let channel = await self.heartbeatChannel else { break }
@@ -314,9 +327,13 @@ public actor PeerSession {
             let rtt = Double((ContinuousClock.now - pingTime).components.attoseconds) / 1e15
             await self.updateHeartbeat(rtt: rtt)
           }
+          consecutiveFailures = 0
         } catch {
-          // Heartbeat failure is not fatal — channel may recover
-          break
+          consecutiveFailures += 1
+          if consecutiveFailures >= 3 {
+            // 3 consecutive failures means the channel is likely dead
+            break
+          }
         }
       }
     }

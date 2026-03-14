@@ -67,16 +67,23 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
     /// Monotonic generation counter for messageWaiter. Prevents stale cancel
     /// tasks from resuming a newer continuation after a receive timeout.
     var waiterGeneration: UInt64 = 0
+    /// Whether the open event has been received (prevents race between
+    /// delegate callback and waitForOpen continuation setup).
+    var didOpen = false
 
     func onOpen() {
+      didOpen = true
       openContinuation?.resume()
       openContinuation = nil
     }
 
     func waitForOpen() async throws {
+      if didOpen { return }
       try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-          if Task.isCancelled {
+          if didOpen {
+            cont.resume()
+          } else if Task.isCancelled {
             cont.resume(throwing: CancellationError())
           } else {
             openContinuation = cont
@@ -193,6 +200,13 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
     }
 
     channel.delegate = self
+
+    // If the channel was already open when we attached the delegate,
+    // the .open state transition won't fire again. Notify the actor
+    // so waitForOpen() doesn't hang.
+    if channel.readyState == .open {
+      Task { await state.onOpen() }
+    }
   }
 
   // MARK: - Properties
