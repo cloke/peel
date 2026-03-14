@@ -650,6 +650,7 @@ public final class MCPServerService {
   var chromeToolsHandler: ChromeToolsHandler
   var repoProfileToolsHandler: RepoProfileToolsHandler
   var missionToolsHandler: MissionToolsHandler
+  var rebuildToolsHandler: RebuildToolsHandler
   var repoProfileService: RepoProfileService
   var prReviewQueue = PRReviewQueue()
   var schedulingToolsHandler: SchedulingToolsHandler
@@ -732,6 +733,7 @@ public final class MCPServerService {
     self.chromeToolsHandler = ChromeToolsHandler()
     self.repoProfileToolsHandler = RepoProfileToolsHandler()
     self.missionToolsHandler = MissionToolsHandler()
+    self.rebuildToolsHandler = RebuildToolsHandler()
     self.repoProfileService = RepoProfileService()
     self.schedulingToolsHandler = SchedulingToolsHandler()
     self.localChatToolsHandler = LocalChatToolsHandler()
@@ -883,6 +885,7 @@ public final class MCPServerService {
     repoProfileToolsHandler.delegate = self
     repoProfileToolsHandler.profileService = repoProfileService
     missionToolsHandler.delegate = self
+    rebuildToolsHandler.delegate = self
     runToolsHandler.delegate = self
     schedulingToolsHandler.delegate = self
     localChatToolsHandler?.delegate = self

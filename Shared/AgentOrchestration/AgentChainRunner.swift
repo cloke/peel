@@ -1027,6 +1027,9 @@ public final class AgentChainRunner {
     case .manager:
       // Manager/supervisor step — runs as an LLM agent that can monitor and intervene on child runs
       return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
+    case .checkpoint:
+      // Save chain state to disk for later resume (e.g., before app rebuild)
+      return try await runCheckpointStep(agent, at: index, chain: chain)
     }
   }
 
@@ -1263,6 +1266,66 @@ public final class AgentChainRunner {
       model: "confirmation-gate",
       prompt: description,
       output: "User confirmed — chain resumed after \(durationStr)",
+      duration: durationStr,
+      premiumCost: 0
+    )
+  }
+
+  // MARK: - Checkpoint Step
+
+  private func runCheckpointStep(
+    _ agent: Agent,
+    at index: Int,
+    chain: AgentChain
+  ) async throws -> AgentChainResult {
+    let startTime = Date()
+    let reason = agent.customInstructions ?? "checkpoint"
+
+    await telemetryProvider.info("Checkpoint step start", metadata: [
+      "chainId": chain.id.uuidString,
+      "agentName": agent.name,
+      "stepIndex": "\(index)",
+      "reason": reason
+    ])
+
+    agent.updateState(.working)
+    chain.addStatusMessage("💾 \(agent.name): Saving checkpoint — \(reason)", type: .info)
+
+    // Collect completed results from previous steps
+    let completedResults = chain.results.map {
+      (agentName: $0.agentName, model: $0.model, output: String($0.output.prefix(4000)), premiumCost: $0.premiumCost)
+    }
+
+    let savedPath = try ChainCheckpointService.shared.saveCheckpoint(
+      chainId: chain.id,
+      chainName: chain.name,
+      templateName: chain.name,
+      prompt: chain.initialPrompt ?? "",
+      workingDirectory: chain.workingDirectory,
+      completedStepIndex: index,
+      results: completedResults,
+      operatorGuidance: chain.operatorGuidance,
+      reason: reason
+    )
+
+    let duration = Date().timeIntervalSince(startTime)
+    let durationStr = String(format: "%.1fs", duration)
+
+    agent.updateState(.complete)
+    chain.addStatusMessage("✓ \(agent.name): Checkpoint saved (\(durationStr))", type: .complete)
+
+    await telemetryProvider.info("Checkpoint step complete", metadata: [
+      "chainId": chain.id.uuidString,
+      "agentName": agent.name,
+      "savedPath": savedPath.path
+    ])
+
+    return AgentChainResult(
+      agentId: agent.id,
+      agentName: agent.name,
+      model: "checkpoint",
+      prompt: reason,
+      output: "Chain state saved to \(savedPath.path). Completed \(completedResults.count) steps. Resume with chain.resume after rebuild.",
       duration: durationStr,
       premiumCost: 0
     )

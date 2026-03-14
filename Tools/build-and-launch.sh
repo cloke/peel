@@ -14,6 +14,7 @@
 #                         HOST defaults to localhost; use a LAN IP for multi-machine
 #   --swarm [ROLE]        Auto-start swarm after launch (default role: hybrid)
 #                         ROLE: brain, worker, hybrid
+#   --resume-chain ID    After launch, resume a checkpointed chain by ID
 #   --help                Show this help message
 #
 
@@ -33,6 +34,7 @@ EMULATOR_MODE=false
 EMULATOR_HOST=""
 SWARM_MODE=false
 SWARM_ROLE="hybrid"
+RESUME_CHAIN_ID=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -70,6 +72,11 @@ while [[ $# -gt 0 ]]; do
         shift
       fi
       shift
+      ;;
+    --resume-chain)
+      RESUME_CHAIN_ID="$2"
+      WAIT_FOR_SERVER=true  # Must wait for server to resume
+      shift 2
       ;;
     --help|-h)
       head -20 "$0" | tail -18
@@ -279,6 +286,24 @@ if [[ "$WAIT_FOR_SERVER" == "true" ]]; then
         fi
       fi
       
+      # Resume checkpointed chain if requested
+      if [[ -n "$RESUME_CHAIN_ID" ]]; then
+        echo "🔄 Resuming checkpointed chain: ${RESUME_CHAIN_ID}..."
+        sleep 1
+
+        RESUME_RESPONSE=$(curl -s -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"jsonrpc\":\"2.0\",\"id\":100,\"method\":\"tools/call\",\"params\":{\"name\":\"chain.resume\",\"arguments\":{\"chainId\":\"${RESUME_CHAIN_ID}\"}}}" \
+          "http://127.0.0.1:${MCP_PORT}/rpc" 2>/dev/null || echo "")
+
+        if echo "$RESUME_RESPONSE" | grep -q '"found":true'; then
+          echo "✅ Checkpoint loaded for chain ${RESUME_CHAIN_ID}"
+          echo "   Use chains.run with the checkpoint context to continue."
+        else
+          echo "⚠️  No checkpoint found for chain ${RESUME_CHAIN_ID}"
+        fi
+      fi
+
       echo ""
       echo "Available commands:"
       echo "  curl -X POST -H 'Content-Type: application/json' \\"

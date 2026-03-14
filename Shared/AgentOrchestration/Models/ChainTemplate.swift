@@ -1136,6 +1136,9 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
   case confirmationGate
   /// Supervisor step that monitors child runs and can intervene (re-prompt, cancel, adjust)
   case manager
+  /// Saves chain state to disk and optionally triggers app rebuild + relaunch.
+  /// The chain resumes from this point after restart.
+  case checkpoint
 
   public var displayName: String {
     switch self {
@@ -1145,6 +1148,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .vmAgentic: "VM Agent"
     case .confirmationGate: "Confirmation Gate"
     case .manager: "Manager"
+    case .checkpoint: "Checkpoint"
     }
   }
 
@@ -1156,6 +1160,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .vmAgentic: "LLM agent running inside VM sandbox"
     case .confirmationGate: "Pauses chain for user confirmation"
     case .manager: "Supervisor that monitors and manages child runs"
+    case .checkpoint: "Saves state and optionally rebuilds app"
     }
   }
 
@@ -1167,6 +1172,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .vmAgentic: "shield.checkmark"
     case .confirmationGate: "hand.raised.circle"
     case .manager: "person.badge.shield.checkmark"
+    case .checkpoint: "arrow.clockwise.circle"
     }
   }
 
