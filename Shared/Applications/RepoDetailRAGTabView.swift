@@ -34,6 +34,7 @@ struct RAGTabView: View {
   @State private var enrichedChunks = 0
   @State private var enrichResult: String?
   @State private var enrichBatchProgress: (current: Int, total: Int)?
+  @State private var enrichOverallProgress: (completed: Int, total: Int)?
 
   // Swarm sync state
   private var swarm: SwarmCoordinator { .shared }
@@ -318,7 +319,7 @@ struct RAGTabView: View {
             ProgressView(value: Double(batch.current), total: Double(batch.total))
               .tint(.purple)
             HStack {
-              Text("Chunk \(batch.current) of \(batch.total)")
+              Text("Analyzing chunk \(batch.current) of \(batch.total)")
                 .font(.caption2)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -332,14 +333,28 @@ struct RAGTabView: View {
           }
         }
 
-        if isEnriching, let batch = enrichBatchProgress {
-          VStack(alignment: .leading, spacing: 2) {
-            ProgressView(value: Double(batch.current), total: Double(batch.total))
+        if isEnriching {
+          if let overall = enrichOverallProgress, overall.total > 0 {
+            VStack(alignment: .leading, spacing: 2) {
+              ProgressView(value: Double(overall.completed), total: Double(overall.total))
+                .tint(.orange)
+              Text("Enriching \(overall.completed) of \(overall.total) chunks")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            }
+          } else if let batch = enrichBatchProgress {
+            VStack(alignment: .leading, spacing: 2) {
+              ProgressView(value: Double(batch.current), total: Double(batch.total))
+                .tint(.orange)
+              Text("Enriching \(batch.current) of \(batch.total)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            }
+          } else {
+            ProgressView()
               .tint(.orange)
-            Text("Enriching \(batch.current) of \(batch.total)")
-              .font(.caption2)
-              .monospacedDigit()
-              .foregroundStyle(.secondary)
           }
         }
 
@@ -1307,12 +1322,13 @@ struct RAGTabView: View {
         var batchCount = 0
         var remaining = 500
         for path in paths where remaining > 0 {
+          let offset = grandTotal
           let count = try await mcpServer.analyzeRagChunks(
             repoPath: path,
             limit: remaining
           ) { current, total in
             Task { @MainActor in
-              state?.batchProgress = (current, total)
+              state?.batchProgress = (offset + current, offset + total)
             }
           }
           batchCount += count
@@ -1359,7 +1375,18 @@ struct RAGTabView: View {
     enrichError = nil
     enrichResult = nil
     enrichBatchProgress = nil
+    enrichOverallProgress = nil
     do {
+      // Compute total unenriched across all sub-repos for overall progress
+      var totalToEnrich = 0
+      for path in paths {
+        let analyzed = (try? await mcpServer.getAnalyzedChunkCount(repoPath: path)) ?? 0
+        let enriched = (try? await mcpServer.getEnrichedChunkCount(repoPath: path)) ?? 0
+        totalToEnrich += max(0, analyzed - enriched)
+      }
+      if totalToEnrich > 0 {
+        enrichOverallProgress = (completed: 0, total: totalToEnrich)
+      }
       var grandTotal = 0
       var keepGoing = true
       while keepGoing {
@@ -1378,6 +1405,7 @@ struct RAGTabView: View {
           remaining -= count
         }
         grandTotal += batchCount
+        enrichOverallProgress = (completed: grandTotal, total: totalToEnrich)
         keepGoing = batchCount > 0
       }
       enrichedChunks = grandTotal
@@ -1400,6 +1428,7 @@ struct RAGTabView: View {
     }
     isEnriching = false
     enrichBatchProgress = nil
+    enrichOverallProgress = nil
   }
 
   private func loadLessons() async {
