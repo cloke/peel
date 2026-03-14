@@ -883,12 +883,25 @@ public final class SwarmCoordinator {
           if connectedNames.contains(peer.name) { continue }
 
           // If TXT record hasn't delivered the real deviceId yet, try to
-          // resolve via Firestore worker list (match by hostname).
+          // resolve via Firestore worker list (match by hostname or prefix).
           let effectivePeerId: String
           if !peer.hasDeviceId {
+            // Try exact deviceName match first
             if let match = FirebaseService.shared.swarmWorkers.first(where: { $0.deviceName == peer.name }) {
               effectivePeerId = match.id
-              self.logger.notice("LAN reconnect: resolved \(peer.name, privacy: .public) → Firestore UUID \(match.id.prefix(8), privacy: .public)")
+            }
+            // Try prefix match for IPv6-based hostnames that change suffix on new networks
+            // e.g. "syn-2600-6c5e-467f-34de-XXXX" matches even if XXXX differs
+            else if let prefix = peer.name.split(separator: ".").first,
+                    prefix.count > 16,
+                    let match = FirebaseService.shared.swarmWorkers.first(where: {
+                      guard let workerPrefix = $0.deviceName.split(separator: ".").first else { return false }
+                      // Match on first 20 chars of the hostname (stable part of IPv6 SLAAC)
+                      let matchLen = min(20, min(prefix.count, workerPrefix.count))
+                      return prefix.prefix(matchLen) == workerPrefix.prefix(matchLen)
+                    }) {
+              effectivePeerId = match.id
+              self.logger.notice("LAN reconnect: prefix-matched \(peer.name.prefix(30), privacy: .public) → \(match.displayName, privacy: .public) (\(match.id.prefix(8), privacy: .public))")
             } else {
               self.logger.notice("LAN reconnect: skipping \(peer.name, privacy: .public) — no TXT deviceId and no Firestore match")
               continue
