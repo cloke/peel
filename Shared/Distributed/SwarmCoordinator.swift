@@ -172,7 +172,8 @@ public final class SwarmCoordinator {
   private let ragTransferTimeoutSeconds: TimeInterval = 120
 
   /// How long a transfer can stay queued before being failed.
-  private let ragTransferQueuedTimeout: TimeInterval = 30
+  /// Large repos can take 60+ seconds for the sender to export the bundle.
+  private let ragTransferQueuedTimeout: TimeInterval = 120
 
   /// Network path monitor for sleep/wake reconnection
   private var pathMonitor: NWPathMonitor?
