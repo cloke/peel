@@ -966,7 +966,10 @@ struct RAGTabView: View {
 
   private func peerMenuDisplayName(_ peer: ConnectedPeer) -> String {
     let preferredSuffix = SwarmPeerPreferences.isPreferred(peer) ? " (Preferred)" : ""
-    return "\(peer.displayName) · \(peer.capabilities.memoryGB)GB\(preferredSuffix)"
+    let repoId = repo.normalizedRemoteURL
+    let hasRepo = peer.capabilities.indexedRepos.contains(repoId)
+    let statusSuffix = hasRepo ? "" : " · not indexed"
+    return "\(peer.displayName)\(preferredSuffix)\(statusSuffix)"
   }
 
   private func workerMenuDisplayName(_ worker: FirestoreWorker) -> String {
