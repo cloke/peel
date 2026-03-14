@@ -121,7 +121,11 @@ public actor PeerSession {
       remoteCandidateTask = Task { [logger = self.logger, peerId = self.peerId] in
         var count = 0
         for await candidate in signaling.receiveCandidates() {
-          try? await newClient.addICECandidate(candidate)
+          do {
+            try await newClient.addICECandidate(candidate)
+          } catch {
+            logger.warning("PeerSession[\(peerId.prefix(8), privacy: .public)]: failed to add remote ICE candidate: \(error.localizedDescription, privacy: .public)")
+          }
           count += 1
           if count <= 3 || count % 10 == 0 {
             logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: added remote ICE candidate #\(count)")
@@ -209,7 +213,11 @@ public actor PeerSession {
       remoteCandidateTask = Task { [logger = self.logger, peerId = self.peerId] in
         var count = 0
         for await candidate in signaling.receiveCandidates() {
-          try? await newClient.addICECandidate(candidate)
+          do {
+            try await newClient.addICECandidate(candidate)
+          } catch {
+            logger.warning("PeerSession[\(peerId.prefix(8), privacy: .public)]: failed to add remote ICE candidate: \(error.localizedDescription, privacy: .public)")
+          }
           count += 1
           if count <= 3 || count % 10 == 0 {
             logger.info("PeerSession[\(peerId.prefix(8), privacy: .public)]: added remote ICE candidate #\(count)")
