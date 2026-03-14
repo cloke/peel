@@ -832,9 +832,10 @@ public final class SwarmCoordinator {
       guard !Task.isCancelled else { return }
       self.autoConnectWANPeers()
 
-      // Then periodically re-check (new workers may appear)
+      // Then periodically re-check (new workers may appear).
+      // 120s interval reduces Firestore write pressure on the free tier.
       while !Task.isCancelled {
-        try? await Task.sleep(for: .seconds(30))
+        try? await Task.sleep(for: .seconds(120))
         guard !Task.isCancelled else { return }
         self.autoConnectWANPeers()
       }
@@ -946,7 +947,10 @@ public final class SwarmCoordinator {
           }
         }
 
-        try? await Task.sleep(for: .seconds(15))
+        // 60s between cycles reduces Firestore write pressure.
+        // Each connection attempt writes offer + candidates; on the free tier
+        // (20K writes/day) aggressive retries can exhaust the daily quota.
+        try? await Task.sleep(for: .seconds(60))
       }
     }
   }

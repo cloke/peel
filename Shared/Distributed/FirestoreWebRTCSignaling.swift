@@ -98,9 +98,6 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
     // Generate sessionId if not already prepared
     if sessionId == nil { prepareSession() }
 
-    // Delete any stale remote answer doc so we can detect a fresh one
-    try? await remoteDocRef.delete()
-
     let start = ContinuousClock.now
     try await myDocRef.setData([
       "type": "offer",
@@ -141,6 +138,7 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   private func waitForSDP(docRef: DocumentReference, expectedType: String, timeout: Duration) async throws -> String {
     logger.notice("[signaling] waiting for \(expectedType) (timeout: \(timeout), session=\(self.sessionId?.prefix(8) ?? "none", privacy: .public))")
     let waitStart = ContinuousClock.now
+    let expectedSessionId = sessionId  // Capture current sessionId for answer matching
     let result = try await withThrowingTaskGroup(of: String.self) { group in
       group.addTask { [weak self] in
         guard let self else { throw WebRTCSignalingError.signalingClosed }
@@ -168,6 +166,16 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
               else {
                 self?.logger.debug("[signaling] listener fired for \(expectedType) but no match yet")
                 return
+              }
+
+              // For answers: verify the sessionId matches our offer's sessionId.
+              // This avoids accepting a stale answer from a previous session.
+              if expectedType == "answer", let expected = expectedSessionId {
+                let answerSid = data["sessionId"] as? String
+                if answerSid != expected {
+                  self?.logger.info("[signaling] ignoring stale answer (session=\(answerSid?.prefix(8) ?? "nil", privacy: .public), expected=\(expected.prefix(8), privacy: .public))")
+                  return
+                }
               }
 
               // For offers: extract the initiator's sessionId so the responder
