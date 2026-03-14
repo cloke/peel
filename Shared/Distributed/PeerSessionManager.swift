@@ -12,6 +12,18 @@ import Foundation
 import os.log
 import WebRTCTransfer
 
+/// Error thrown when a connection attempt is deferred to an existing session.
+enum PeerSessionManagerError: LocalizedError {
+  case connectionAlreadyInProgress(peerId: String)
+
+  var errorDescription: String? {
+    switch self {
+    case .connectionAlreadyInProgress(let peerId):
+      return "Connection to \(peerId.prefix(8)) already in progress"
+    }
+  }
+}
+
 /// Manages all WebRTC peer sessions and provides observable state for UI.
 @MainActor
 @Observable
@@ -68,7 +80,7 @@ public final class PeerSessionManager {
         let connectAge = Date().timeIntervalSince(connectStartedAt[peerId] ?? .distantPast)
         if connectAge < 60 {
           logger.info("Session for \(peerId, privacy: .public) still connecting (\(Int(connectAge))s old) — not clobbering")
-          return
+          throw PeerSessionManagerError.connectionAlreadyInProgress(peerId: peerId)
         }
         logger.warning("Session for \(peerId, privacy: .public) stuck in \(existingState.rawValue, privacy: .public) for \(Int(connectAge))s — resetting")
       }

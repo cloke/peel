@@ -809,6 +809,9 @@ public final class SwarmCoordinator {
           try await self.connectToWorker(peerId: worker.id)
           logger.info("WAN auto-connect: WebRTC connected to \(worker.displayName)")
           self.wanConnectAttempted.removeValue(forKey: worker.id)
+        } catch is PeerSessionManagerError {
+          // Connection already in progress — not a failure, just skip this cycle
+          self.wanConnectAttempted.removeValue(forKey: worker.id)
         } catch {
           logger.warning("WAN auto-connect: WebRTC failed for \(worker.displayName) — \(error.localizedDescription), will retry in \(Int(self.wanConnectRetryInterval))s")
         }
@@ -934,6 +937,8 @@ public final class SwarmCoordinator {
             do {
               try await self.connectToWorker(peerId: effectivePeerId)
               failureCounts[peerId] = nil  // Reset on success
+            } catch is PeerSessionManagerError {
+              // Connection already in progress — not a failure, don't increment backoff
             } catch {
               failureCounts[peerId] = (failureCounts[peerId] ?? 0) + 1
               self.logger.warning("LAN reconnect failed for \(peer.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
