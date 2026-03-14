@@ -230,6 +230,8 @@ struct InlineExecutionCard: View {
   let onToggleExpand: () -> Void
   @State private var rejectReason = ""
   @State private var showingRejectDialog = false
+  @State private var showingRedispatchDialog = false
+  @State private var redispatchReason = ""
   @State private var assignedRejectReason = ""
   @State private var showingAssignedRejectDialog = false
   @State private var expandedSteps: Set<UUID> = []
@@ -470,6 +472,20 @@ struct InlineExecutionCard: View {
     } message: {
       Text("Provide a reason for rejecting this execution.")
     }
+    .alert("Reject & Retry", isPresented: $showingRedispatchDialog) {
+      TextField("What should be different?", text: $redispatchReason)
+      Button("Cancel", role: .cancel) {}
+      Button("Reject & Retry", role: .destructive) {
+        runner.rejectAndRedispatchExecution(
+          execution,
+          in: run,
+          reason: redispatchReason
+        )
+        redispatchReason = ""
+      }
+    } message: {
+      Text("The execution will be rejected and a new one created with your feedback.")
+    }
     .alert("Reject Assigned Review Target", isPresented: $showingAssignedRejectDialog) {
       TextField("Reason", text: $assignedRejectReason)
       Button("Cancel", role: .cancel) {}
@@ -557,6 +573,16 @@ struct InlineExecutionCard: View {
         .controlSize(.mini)
 
         Button {
+          Task {
+            try? await runner.approveAndMergeExecution(execution, in: run)
+          }
+        } label: {
+          Label("Approve & Merge", systemImage: "checkmark.seal")
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.mini)
+
+        Button {
           runner.markReviewed(execution, in: run)
         } label: {
           Label("Reviewed", systemImage: "checkmark.circle")
@@ -570,6 +596,15 @@ struct InlineExecutionCard: View {
           Label("Reject", systemImage: "xmark")
         }
         .buttonStyle(.bordered)
+        .controlSize(.mini)
+
+        Button {
+          showingRedispatchDialog = true
+        } label: {
+          Label("Reject & Retry", systemImage: "arrow.counterclockwise")
+        }
+        .buttonStyle(.bordered)
+        .tint(.orange)
         .controlSize(.mini)
       }
 
@@ -592,10 +627,22 @@ struct InlineExecutionCard: View {
             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
           }
         } label: {
-          Label("Resolve", systemImage: "exclamationmark.triangle")
+          Label("Resolve in Finder", systemImage: "exclamationmark.triangle")
+        }
+        .buttonStyle(.bordered)
+        .tint(.orange)
+        .controlSize(.mini)
+
+        Button {
+          Task {
+            // Re-attempt merge after manual conflict resolution
+            execution.status = .approved
+            try? await runner.mergeExecution(execution, in: run)
+          }
+        } label: {
+          Label("Resume Merge", systemImage: "arrow.triangle.merge")
         }
         .buttonStyle(.borderedProminent)
-        .tint(.orange)
         .controlSize(.mini)
       }
 

@@ -506,6 +506,23 @@ struct RunDetailView: View {
           Label("Approve All", systemImage: "checkmark.circle")
         }
         .buttonStyle(.borderedProminent)
+
+        Button {
+          mergeError = nil
+          Task {
+            do {
+              for execution in run.executions where execution.status == .awaitingReview {
+                try await runner.approveAndMergeExecution(execution, in: run)
+              }
+            } catch {
+              mergeError = error.localizedDescription
+            }
+          }
+        } label: {
+          Label("Approve All & Merge", systemImage: "checkmark.seal")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.green)
       }
 
       if run.readyToMergeCount > 0, let runner {

@@ -2304,6 +2304,43 @@ final class ParallelWorktreeRunner {
     }
   }
 
+  /// Approve and immediately merge an execution in one action.
+  func approveAndMergeExecution(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun
+  ) async throws {
+    approveExecution(execution, in: run)
+    try await mergeExecution(execution, in: run)
+  }
+
+  /// Reject an execution and create a new one with feedback for redispatch.
+  func rejectAndRedispatchExecution(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    reason: String,
+    amendedPrompt: String? = nil
+  ) {
+    rejectExecution(execution, in: run, reason: reason)
+
+    let originalTask = execution.task
+    let feedback = "PREVIOUS ATTEMPT REJECTED: \(reason)\n\nPlease address this feedback and try again.\n\n"
+    let newPrompt = feedback + (amendedPrompt ?? originalTask.prompt)
+
+    let newTask = WorktreeTask(
+      title: "\(originalTask.title) (retry)",
+      description: originalTask.description,
+      prompt: newPrompt,
+      focusPaths: originalTask.focusPaths,
+      useUXTesting: originalTask.useUXTesting,
+      apiBaseURL: originalTask.apiBaseURL,
+      installDependencies: originalTask.installDependencies,
+      devServerPath: originalTask.devServerPath
+    )
+    let newExecution = ParallelWorktreeExecution(task: newTask)
+    run.executions.append(newExecution)
+    updateRunStatus(run)
+  }
+
   /// Mark all pending executions as reviewed
   func markAllReviewed(in run: ParallelWorktreeRun) {
     for execution in run.executions where execution.status == .awaitingReview {
