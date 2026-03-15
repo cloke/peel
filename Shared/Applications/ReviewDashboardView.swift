@@ -19,14 +19,38 @@ struct ReviewDashboardView: View {
   private var runner: ParallelWorktreeRunner? { mcpServer.parallelWorktreeRunner }
 
   var body: some View {
-    VStack(spacing: 0) {
-      headerBar
-      Divider()
+    HSplitView {
+      // Left: filter bar + list
+      VStack(spacing: 0) {
+        headerBar
+        Divider()
 
-      if filteredItems.isEmpty {
-        emptyState
+        if filteredItems.isEmpty {
+          emptyState
+        } else {
+          reviewList
+        }
+      }
+      .frame(minWidth: 320, idealWidth: 400)
+
+      // Right: detail pane
+      if let selected = selectedItemId, let (execution, run) = resolveExecution(selected) {
+        ExecutionDetailView(
+          execution: execution,
+          run: run,
+          runner: runner!,
+          onDismiss: { selectedItemId = nil }
+        )
       } else {
-        reviewList
+        VStack(spacing: 12) {
+          Image(systemName: "sidebar.right")
+            .font(.system(size: 36))
+            .foregroundStyle(.secondary)
+          Text("Select a review to see details")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
     .navigationTitle("Review Dashboard")
@@ -205,6 +229,17 @@ struct ReviewDashboardView: View {
     case .rejected: return allItems.filter { $0.status == .rejected }.count
     case .readyToMerge: return allItems.filter { $0.status == .readyToMerge }.count
     }
+  }
+
+  /// Resolve a selected item ID back to the live execution and its parent run.
+  private func resolveExecution(_ executionId: UUID) -> (ParallelWorktreeExecution, ParallelWorktreeRun)? {
+    guard let runner else { return nil }
+    for run in runner.runs {
+      if let execution = run.executions.first(where: { $0.id == executionId }) {
+        return (execution, run)
+      }
+    }
+    return nil
   }
 
   private func mapStatus(_ status: ParallelWorktreeStatus) -> ReviewItemStatus {
