@@ -178,42 +178,130 @@ private func parseFreeformReview(_ output: String) -> ParsedReview {
   var suggestions: [String] = []
   var ciStatus: String?
   var verdict: ParsedReview.Verdict = .unknown
+  var verdictReasoning: String?
   var currentSection = ""
 
-  for line in output.components(separatedBy: "\n") {
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    let lowered = trimmed.lowercased()
-
-    if lowered.contains("verdict:") || lowered.contains("decision:") {
-      if lowered.contains("approve") && !lowered.contains("request") { verdict = .approve }
-      else if lowered.contains("request_changes") || lowered.contains("request changes") { verdict = .requestChanges }
-      else if lowered.contains("comment") { verdict = .comment }
+  // Try JSON-style field extraction first (handles truncated or partial JSON)
+  if output.contains("\"summary\"") {
+    if let range = output.range(of: #""summary"\s*:\s*"((?:[^"\\]|\\.)*)""#, options: .regularExpression) {
+      let match = output[range]
+      if let valueStart = match.range(of: #":\s*""#, options: .regularExpression) {
+        var value = String(match[valueStart.upperBound...].dropLast())
+        value = value.replacingOccurrences(of: "\\\"", with: "\"")
+          .replacingOccurrences(of: "\\n", with: "\n")
+        if !value.isEmpty { summary = value }
+      }
     }
-    if lowered.contains("risk:") || lowered.contains("risk level:") {
-      if lowered.contains("high") { riskLevel = "high" }
-      else if lowered.contains("medium") { riskLevel = "medium" }
-      else if lowered.contains("low") { riskLevel = "low" }
+    // Extract riskLevel from JSON
+    if let range = output.range(of: #""riskLevel"\s*:\s*"(\w+)""#, options: .regularExpression) {
+      let match = String(output[range])
+      if match.contains("high") { riskLevel = "high" }
+      else if match.contains("medium") { riskLevel = "medium" }
+      else if match.contains("low") { riskLevel = "low" }
     }
-    if lowered.contains("ci status:") || lowered.contains("ci:") || lowered.contains("checks:") {
-      ciStatus = String(trimmed.split(separator: ":", maxSplits: 1).last ?? "").trimmingCharacters(in: .whitespaces)
+    // Extract verdict from JSON
+    if let range = output.range(of: #""verdict"\s*:\s*"([^"]*)""#, options: .regularExpression) {
+      let match = String(output[range]).lowercased()
+      if match.contains("approve") && !match.contains("request") { verdict = .approve }
+      else if match.contains("request_changes") { verdict = .requestChanges }
+      else if match.contains("comment") { verdict = .comment }
     }
-    if lowered.contains("summary") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "summary"; continue }
-    if lowered.contains("issue") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "issues"; continue }
-    if lowered.contains("suggestion") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "suggestions"; continue }
-
-    if !trimmed.isEmpty {
-      let clean = trimmed.replacingOccurrences(of: "^[-*•]\\s*", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
-      switch currentSection {
-      case "summary": summary = summary.isEmpty ? clean : summary + " " + clean
-      case "issues": if clean.count > 3 { issues.append(clean) }
-      case "suggestions": if clean.count > 3 { suggestions.append(clean) }
-      default: break
+    // Extract verdictReasoning from JSON
+    if let range = output.range(of: #""verdictReasoning"\s*:\s*"((?:[^"\\]|\\.)*)""#, options: .regularExpression) {
+      let match = output[range]
+      if let valueStart = match.range(of: #":\s*""#, options: .regularExpression) {
+        let value = String(match[valueStart.upperBound...].dropLast())
+          .replacingOccurrences(of: "\\\"", with: "\"")
+        if !value.isEmpty { verdictReasoning = value }
+      }
+    }
+    // Extract ciStatus from JSON
+    if let range = output.range(of: #""ciStatus"\s*:\s*"((?:[^"\\]|\\.)*)""#, options: .regularExpression) {
+      let match = output[range]
+      if let valueStart = match.range(of: #":\s*""#, options: .regularExpression) {
+        let value = String(match[valueStart.upperBound...].dropLast())
+        if !value.isEmpty { ciStatus = value }
+      }
+    }
+    // Extract issues from JSON — find {severity, description} objects
+    let issuePattern = #"\{\s*"severity"\s*:\s*"([^"]*)"\s*,\s*"description"\s*:\s*"((?:[^"\\]|\\.)*)""#
+    if let regex = try? NSRegularExpression(pattern: issuePattern) {
+      let nsRange = NSRange(output.startIndex..<output.endIndex, in: output)
+      regex.enumerateMatches(in: output, range: nsRange) { match, _, _ in
+        guard let match else { return }
+        if let sevRange = Range(match.range(at: 1), in: output),
+           let descRange = Range(match.range(at: 2), in: output) {
+          let severity = String(output[sevRange])
+          let desc = String(output[descRange])
+            .replacingOccurrences(of: "\\\"", with: "\"")
+            .replacingOccurrences(of: "\\n", with: "\n")
+          issues.append("[\(severity.capitalized)] \(desc)")
+        }
+      }
+    }
+    // Extract string-array suggestions from JSON
+    let sugPattern = #""suggestions"\s*:\s*\[([\s\S]*?)\]"#
+    if let range = output.range(of: sugPattern, options: .regularExpression) {
+      let arrayContent = String(output[range])
+      let strPattern = #""((?:[^"\\]|\\.)*)""#
+      if let strRegex = try? NSRegularExpression(pattern: strPattern) {
+        let nsRange = NSRange(arrayContent.startIndex..<arrayContent.endIndex, in: arrayContent)
+        var first = true
+        strRegex.enumerateMatches(in: arrayContent, range: nsRange) { match, _, _ in
+          guard let match, let r = Range(match.range(at: 1), in: arrayContent) else { return }
+          if first { first = false; return } // skip "suggestions" key itself
+          let s = String(arrayContent[r])
+            .replacingOccurrences(of: "\\\"", with: "\"")
+          if s.count > 3 { suggestions.append(s) }
+        }
       }
     }
   }
 
-  if summary.isEmpty { summary = String(output.prefix(500)) }
-  return ParsedReview(summary: summary, riskLevel: riskLevel, issues: issues, suggestions: suggestions, ciStatus: ciStatus, verdict: verdict, verdictReasoning: nil, rawOutput: output)
+  // Fall back to markdown-style parsing if JSON extraction found nothing
+  if summary.isEmpty && issues.isEmpty && verdict == .unknown {
+    for line in output.components(separatedBy: "\n") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      let lowered = trimmed.lowercased()
+
+      if lowered.contains("verdict:") || lowered.contains("decision:") {
+        if lowered.contains("approve") && !lowered.contains("request") { verdict = .approve }
+        else if lowered.contains("request_changes") || lowered.contains("request changes") { verdict = .requestChanges }
+        else if lowered.contains("comment") { verdict = .comment }
+      }
+      if lowered.contains("risk:") || lowered.contains("risk level:") {
+        if lowered.contains("high") { riskLevel = "high" }
+        else if lowered.contains("medium") { riskLevel = "medium" }
+        else if lowered.contains("low") { riskLevel = "low" }
+      }
+      if lowered.contains("ci status:") || lowered.contains("ci:") || lowered.contains("checks:") {
+        ciStatus = String(trimmed.split(separator: ":", maxSplits: 1).last ?? "").trimmingCharacters(in: .whitespaces)
+      }
+      if lowered.contains("summary") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "summary"; continue }
+      if lowered.contains("issue") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "issues"; continue }
+      if lowered.contains("suggestion") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "suggestions"; continue }
+
+      if !trimmed.isEmpty {
+        let clean = trimmed.replacingOccurrences(of: "^[-*•]\\s*", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        switch currentSection {
+        case "summary": summary = summary.isEmpty ? clean : summary + " " + clean
+        case "issues": if clean.count > 3 { issues.append(clean) }
+        case "suggestions": if clean.count > 3 { suggestions.append(clean) }
+        default: break
+        }
+      }
+    }
+  }
+
+  // If we still have no summary, extract prose text before any JSON block
+  if summary.isEmpty {
+    let lines = output.components(separatedBy: "\n")
+    let proseLines = lines.prefix(while: { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("```") && !$0.trimmingCharacters(in: .whitespaces).hasPrefix("{") })
+    let prose = proseLines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    summary = prose.isEmpty ? String(output.prefix(500)) : String(prose.prefix(500))
+  }
+
+  return ParsedReview(summary: summary, riskLevel: riskLevel, issues: issues, suggestions: suggestions, ciStatus: ciStatus, verdict: verdict, verdictReasoning: verdictReasoning, rawOutput: output)
 }
 
 private func reviewJSONCandidates(from output: String) -> [String] {

@@ -304,12 +304,23 @@ struct RunDetailView: View {
         ReviewOutputView(parsed: parsed)
         followUpActionsSection(parsed: parsed)
       } else {
+        // Never dump raw JSON/text inline — show a summary + disclosure
         Text("Agent Output")
           .font(.headline)
-        Text(output)
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .textSelection(.enabled)
+        if !parsed.summary.isEmpty, parsed.summary != String(output.prefix(500)) {
+          Text(parsed.summary)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+        }
+        DisclosureGroup("View Full Output") {
+          Text(output)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.caption)
       }
     }
   }
