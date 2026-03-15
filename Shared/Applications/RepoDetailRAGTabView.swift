@@ -255,9 +255,21 @@ struct RAGTabView: View {
             .disabled(repo.localPath == nil)
           } else {
             Menu {
+              Button("Re-Index") {
+                Task { await indexRepo(force: false) }
+              }
               Button("Force Full Re-Index") {
                 Task { await indexRepo(force: true) }
               }
+              Divider()
+              Button(isAnalyzing ? "Analyzing…" : "Analyze Chunks") {
+                Task { await analyzeChunks() }
+              }
+              .disabled(isAnalyzing)
+              Button(isEnriching ? "Enriching…" : "Enrich Embeddings") {
+                Task { await enrichEmbeddings() }
+              }
+              .disabled(isEnriching)
             } label: {
               Image(systemName: "ellipsis.circle")
                 .font(.title3)
