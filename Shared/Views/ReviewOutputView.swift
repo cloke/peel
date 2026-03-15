@@ -9,6 +9,7 @@ struct ParsedReview {
   let suggestions: [String]
   let ciStatus: String?
   let verdict: Verdict
+  let verdictReasoning: String?
   let rawOutput: String
 
   var hasStructuredContent: Bool {
@@ -64,6 +65,7 @@ private struct ReviewJSONPayload: Decodable {
   let suggestions: AnyCodableArray?
   let ciStatus: String?
   let verdict: String?
+  let verdictReasoning: String?
   // Additional fields agents sometimes use
   let risk: String?
   let risk_level: String?
@@ -162,6 +164,7 @@ private func parseStructuredReviewJSON(_ output: String) -> ParsedReview? {
       suggestions: payload.suggestions?.values ?? [],
       ciStatus: payload.ciStatus,
       verdict: verdict,
+      verdictReasoning: payload.verdictReasoning,
       rawOutput: output
     )
   }
@@ -210,7 +213,7 @@ private func parseFreeformReview(_ output: String) -> ParsedReview {
   }
 
   if summary.isEmpty { summary = String(output.prefix(500)) }
-  return ParsedReview(summary: summary, riskLevel: riskLevel, issues: issues, suggestions: suggestions, ciStatus: ciStatus, verdict: verdict, rawOutput: output)
+  return ParsedReview(summary: summary, riskLevel: riskLevel, issues: issues, suggestions: suggestions, ciStatus: ciStatus, verdict: verdict, verdictReasoning: nil, rawOutput: output)
 }
 
 private func reviewJSONCandidates(from output: String) -> [String] {
@@ -385,6 +388,12 @@ struct ReviewOutputView: View {
       VStack(alignment: .leading, spacing: 2) {
         Text(parsed.verdict.displayName)
           .font(compact ? .callout.weight(.semibold) : .headline)
+        if let reasoning = parsed.verdictReasoning, !reasoning.isEmpty, !compact {
+          Text(reasoning)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
         if let ci = parsed.ciStatus {
           Text("CI: \(ci)")
             .font(.caption)

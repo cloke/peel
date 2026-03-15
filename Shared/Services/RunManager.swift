@@ -419,7 +419,7 @@ final class RunManager {
         e["insertions"] = exec.insertions
         e["deletions"] = exec.deletions
       }
-      if !exec.output.isEmpty { e["output"] = String(exec.output.prefix(500)) }
+      if !exec.output.isEmpty { e["output"] = exec.output }
       return e
     }
     return d

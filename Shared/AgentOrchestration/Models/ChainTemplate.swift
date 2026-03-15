@@ -547,16 +547,16 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
                  - Missing error handling or test coverage
                  - Style consistency with the rest of the codebase
 
-              7. **Return ONLY valid JSON** (no markdown, no code fences) with this exact schema:
+              7. **Output your review as a JSON code block**. You may include brief analysis text before it, but the JSON block is required and must be valid:
 
-              ```
+              ```json
               {
                 "summary": "1-2 sentence description of what the PR does",
                 "riskLevel": "low" | "medium" | "high",
                 "issues": [
                   {"severity": "high|medium|low", "description": "Issue description with file:line references"}
                 ],
-                "suggestions": ["Suggestion 1", "Suggestion 2"],
+                "suggestions": ["Non-blocking improvement suggestion"],
                 "ciStatus": "12/12 checks passing" or similar,
                 "verdict": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",
                 "verdictReasoning": "Why this verdict"

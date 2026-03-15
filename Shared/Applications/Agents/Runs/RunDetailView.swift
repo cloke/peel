@@ -298,12 +298,14 @@ struct RunDetailView: View {
   private func rawOutputSection(_ output: String) -> some View {
     let parsed = parseReviewOutput(output)
     VStack(alignment: .leading, spacing: 12) {
-      Text("Agent Output")
-        .font(.headline)
-
       if parsed.hasStructuredContent {
+        Text("Agent Review")
+          .font(.headline)
         ReviewOutputView(parsed: parsed)
+        followUpActionsSection(parsed: parsed)
       } else {
+        Text("Agent Output")
+          .font(.headline)
         Text(output)
           .font(.callout)
           .foregroundStyle(.secondary)
