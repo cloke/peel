@@ -213,8 +213,39 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
 
   /// Buffer for outgoing candidates. Flushed as a single Firestore write
   /// after a short delay, reducing 5-10 individual writes to 1-2.
+  /// Protected by `candidateLock` — accessed from sendCandidate() and the flush Task concurrently.
+  private let candidateLock = NSLock()
   private var candidateBuffer: [[String: Any]] = []
   private var candidateFlushTask: Task<Void, Never>?
+
+  /// Thread-safe append + schedule flush. Must be synchronous so NSLock is allowed.
+  private func bufferCandidate(_ data: [String: Any], flusher: @escaping @Sendable () async -> Void) {
+    candidateLock.withLock {
+      candidateBuffer.append(data)
+      candidateFlushTask?.cancel()
+      candidateFlushTask = Task {
+        try? await Task.sleep(for: .milliseconds(500))
+        guard !Task.isCancelled else { return }
+        await flusher()
+      }
+    }
+  }
+
+  /// Thread-safe drain of the buffer. Must be synchronous so NSLock is allowed.
+  private func drainCandidateBuffer() -> [[String: Any]] {
+    candidateLock.withLock {
+      let batch = candidateBuffer
+      candidateBuffer.removeAll()
+      return batch
+    }
+  }
+
+  /// Thread-safe cancel of the flush task.
+  private func cancelCandidateFlush() {
+    candidateLock.withLock {
+      candidateFlushTask?.cancel()
+    }
+  }
 
   func sendCandidate(_ candidate: ICECandidateMessage) async throws {
     var data: [String: Any] = [
@@ -223,23 +254,18 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
       "sdpMLineIndex": candidate.sdpMLineIndex,
     ]
     if let sessionId { data["sessionId"] = sessionId }
-    candidateBuffer.append(data)
 
     // Flush after a short delay to batch multiple candidates into one write.
     // ICE gathering typically produces 4-8 candidates within ~200ms.
-    candidateFlushTask?.cancel()
-    candidateFlushTask = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(500))
-      guard !Task.isCancelled else { return }
+    bufferCandidate(data) { [weak self] in
       await self?.flushCandidates()
     }
   }
 
   /// Write all buffered candidates as a single Firestore document.
   private func flushCandidates() async {
-    guard !candidateBuffer.isEmpty else { return }
-    let batch = candidateBuffer
-    candidateBuffer.removeAll()
+    let batch = drainCandidateBuffer()
+    guard !batch.isEmpty else { return }
 
     do {
       // Write candidates as an array in a single document keyed by batch timestamp.
@@ -316,7 +342,7 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
 
   func cleanup() async {
     // Flush any buffered candidates before tearing down
-    candidateFlushTask?.cancel()
+    cancelCandidateFlush()
     await flushCandidates()
 
     // Remove listeners
