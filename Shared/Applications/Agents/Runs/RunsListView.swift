@@ -196,15 +196,18 @@ struct RunsListView: View {
     let isEmpty = all.isEmpty && history.isEmpty
 
     if isEmpty {
-      ContentUnavailableView {
-        Label("No Runs", systemImage: "arrow.triangle.branch")
-      } description: {
-        Text(viewModel.filterKind == nil
-          ? "Runs from MCP chains and parallel tasks appear here."
-          : "No \(viewModel.filterKind!.displayLabel.lowercased()) runs.")
+      VStack {
+        ContentUnavailableView {
+          Label("No Runs", systemImage: "arrow.triangle.branch")
+        } description: {
+          Text(viewModel.filterKind == nil
+            ? "Runs from MCP chains and parallel tasks appear here."
+            : "No \(viewModel.filterKind!.displayLabel.lowercased()) runs.")
+        }
+        Spacer()
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(16)
+      .padding(.top, 40)
+      .padding(.horizontal, 16)
     } else {
       List(selection: $viewModel.selectedRunId) {
 
@@ -376,11 +379,15 @@ struct RunsListView: View {
   }
 
   private var emptyDetail: some View {
-    ContentUnavailableView {
-      Label("Select a Run", systemImage: "square.stack.3d.up")
-    } description: {
-      Text("Select a run to view details and executions.")
+    VStack {
+      ContentUnavailableView {
+        Label("Select a Run", systemImage: "square.stack.3d.up")
+      } description: {
+        Text("Select a run to view details and executions.")
+      }
+      Spacer()
     }
+    .padding(.top, 40)
   }
 
   // MARK: - Helpers

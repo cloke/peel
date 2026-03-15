@@ -1,5 +1,6 @@
 import Foundation
 import Git
+import Github
 import MCPCore
 import Network
 
@@ -316,13 +317,42 @@ extension MCPServerService {
       if isPRReview, let mgr = runManager,
          let owner = prRepoOwner, let name = prRepoName,
          let number = prNumber, let title = prTitle {
-        run = mgr.createPRReviewRun(
-          repoOwner: owner,
-          repoName: name,
+
+        // Validate PR metadata against GitHub to prevent cross-contamination from
+        // external callers (VS Code Copilot, CLI) that may pass wrong owner/title/branch.
+        let resolved = await validatePRContext(
           prNumber: number,
-          prTitle: title,
-          headRef: prHeadRef ?? baseBranch ?? "HEAD",
-          htmlURL: prHtmlURL ?? "",
+          callerOwner: owner,
+          callerName: name,
+          callerTitle: title,
+          callerHeadRef: prHeadRef,
+          callerHtmlURL: prHtmlURL,
+          projectPath: projectPath
+        )
+
+        let finalOwner = resolved?.repoOwner ?? owner
+        let finalName = resolved?.repoName ?? name
+        let finalTitle = resolved?.prTitle ?? title
+        let finalHeadRef = resolved?.headRef ?? prHeadRef ?? baseBranch ?? "HEAD"
+        let finalHtmlURL = resolved?.htmlURL ?? prHtmlURL ?? ""
+
+        if resolved != nil, (finalOwner != owner || finalTitle != title) {
+          await telemetryProvider.warning("PR context corrected by GitHub validation", metadata: [
+            "prNumber": "\(number)",
+            "callerOwner": owner,
+            "resolvedOwner": finalOwner,
+            "callerTitle": title,
+            "resolvedTitle": finalTitle,
+          ])
+        }
+
+        run = mgr.createPRReviewRun(
+          repoOwner: finalOwner,
+          repoName: finalName,
+          prNumber: number,
+          prTitle: finalTitle,
+          headRef: finalHeadRef,
+          htmlURL: finalHtmlURL,
           prompt: prompt,
           projectPath: projectPath,
           templateName: template.name,
@@ -1302,6 +1332,124 @@ extension MCPServerService {
         }
       }
     }
+  }
+
+  // MARK: - PR Context Validation
+
+  /// Validated PR metadata resolved from GitHub API.
+  struct ResolvedPRContext {
+    let repoOwner: String
+    let repoName: String
+    let prNumber: Int
+    let prTitle: String
+    let headRef: String
+    let htmlURL: String
+  }
+
+  /// Validate PR review parameters against the GitHub API.
+  ///
+  /// External MCP callers (VS Code Copilot, CLI, etc.) can pass incorrect PR metadata
+  /// (wrong repo owner, wrong title, wrong branch). This method fetches the actual PR
+  /// from GitHub and returns verified data. If the caller's owner/name 404s, it falls
+  /// back to the local git remote to discover the correct owner.
+  func validatePRContext(
+    prNumber: Int,
+    callerOwner: String,
+    callerName: String,
+    callerTitle: String?,
+    callerHeadRef: String?,
+    callerHtmlURL: String?,
+    projectPath: String?
+  ) async -> ResolvedPRContext? {
+    // 1. Try the caller-provided owner/name first
+    if let pr = try? await Github.pullRequest(owner: callerOwner, repository: callerName, number: prNumber) {
+      let resolvedOwner = pr.base.repo.owner?.login ?? callerOwner
+      let resolvedName = pr.base.repo.name
+      return ResolvedPRContext(
+        repoOwner: resolvedOwner,
+        repoName: resolvedName,
+        prNumber: pr.number,
+        prTitle: pr.title ?? callerTitle ?? "PR #\(pr.number)",
+        headRef: pr.head.ref,
+        htmlURL: pr.html_url ?? callerHtmlURL ?? ""
+      )
+    }
+
+    // 2. Caller's owner/name failed (404). Try to resolve from local git remote.
+    if let projectPath {
+      let resolvedOwnerRepo = await ownerRepoFromGitRemote(path: projectPath)
+      if let resolvedOwnerRepo {
+        let parts = resolvedOwnerRepo.split(separator: "/")
+        if parts.count == 2 {
+          let gitOwner = String(parts[0])
+          let gitRepo = String(parts[1])
+          // Only retry if the resolved owner differs from the caller's
+          if gitOwner.lowercased() != callerOwner.lowercased() || gitRepo.lowercased() != callerName.lowercased() {
+            if let pr = try? await Github.pullRequest(owner: gitOwner, repository: gitRepo, number: prNumber) {
+              let resolvedOwner = pr.base.repo.owner?.login ?? gitOwner
+              let resolvedName = pr.base.repo.name
+              return ResolvedPRContext(
+                repoOwner: resolvedOwner,
+                repoName: resolvedName,
+                prNumber: pr.number,
+                prTitle: pr.title ?? callerTitle ?? "PR #\(pr.number)",
+                headRef: pr.head.ref,
+                htmlURL: pr.html_url ?? callerHtmlURL ?? ""
+              )
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Could not validate — return nil (caller data will be used as-is with a warning)
+    return nil
+  }
+
+  /// Extract "owner/repo" from the git remote URL at a given path.
+  private func ownerRepoFromGitRemote(path: String) async -> String? {
+    await Task.detached {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+      process.arguments = ["-C", path, "remote", "get-url", "origin"]
+      let pipe = Pipe()
+      process.standardOutput = pipe
+      process.standardError = Pipe()
+      do {
+        try process.run()
+        process.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let url = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return Self.parseOwnerRepo(from: url)
+      } catch {
+        return nil
+      }
+    }.value
+  }
+
+  /// Parse "owner/repo" from a GitHub remote URL.
+  /// Handles both SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git).
+  private nonisolated static func parseOwnerRepo(from remoteURL: String) -> String? {
+    // SSH: git@github.com:owner/repo.git
+    if remoteURL.contains("github.com:") {
+      let afterColon = remoteURL.split(separator: ":").last.map(String.init) ?? ""
+      let cleaned = afterColon.replacingOccurrences(of: ".git", with: "")
+      let parts = cleaned.split(separator: "/")
+      if parts.count >= 2 {
+        return "\(parts[0])/\(parts[1])"
+      }
+    }
+    // HTTPS: https://github.com/owner/repo.git
+    if remoteURL.contains("github.com/") {
+      let components = remoteURL.split(separator: "/")
+      if let ghIdx = components.firstIndex(where: { $0.contains("github.com") }),
+         ghIdx + 2 < components.count {
+        let owner = components[ghIdx + 1]
+        let repo = String(components[ghIdx + 2]).replacingOccurrences(of: ".git", with: "")
+        return "\(owner)/\(repo)"
+      }
+    }
+    return nil
   }
 
 }

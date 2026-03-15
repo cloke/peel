@@ -223,11 +223,6 @@ struct RunDetailView: View {
       }
 
       HStack(spacing: 16) {
-        if let verdict = ctx.reviewVerdict {
-          Label(verdict.capitalized, systemImage: verdictIcon(verdict))
-            .font(.caption)
-            .foregroundStyle(verdictColor(verdict))
-        }
         Text("\(ctx.repoOwner)/\(ctx.repoName)")
           .font(.caption.monospaced())
           .foregroundStyle(.secondary)
@@ -248,21 +243,17 @@ struct RunDetailView: View {
   }
 
   private func verdictIcon(_ verdict: String) -> String {
-    switch verdict {
-    case "approved": "checkmark.seal.fill"
-    case "needsChanges": "pencil.circle.fill"
-    case "rejected": "xmark.circle.fill"
-    default: "questionmark.circle"
-    }
+    let lowered = verdict.lowercased()
+    if lowered.contains("approve") { return "checkmark.seal.fill" }
+    if lowered.contains("reject") || lowered.contains("request") || lowered.contains("change") { return "pencil.circle.fill" }
+    return "questionmark.circle"
   }
 
   private func verdictColor(_ verdict: String) -> Color {
-    switch verdict {
-    case "approved": .green
-    case "needsChanges": .orange
-    case "rejected": .red
-    default: .secondary
-    }
+    let lowered = verdict.lowercased()
+    if lowered.contains("approve") || lowered.contains("pass") { return .green }
+    if lowered.contains("reject") || lowered.contains("fail") || lowered.contains("request_changes") { return .red }
+    return .orange
   }
 
   // MARK: - Prompt

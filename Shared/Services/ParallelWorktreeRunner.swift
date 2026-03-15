@@ -1241,13 +1241,13 @@ final class ParallelWorktreeRunner {
     // Look for explicit verdict declarations
     if let range = lowered.range(of: "\"verdict\"") {
       let after = String(lowered[range.upperBound...].prefix(100))
-      if after.contains("approve") && !after.contains("request") { return "approved" }
-      if after.contains("request_changes") || after.contains("request changes") { return "needsChanges" }
+      if after.contains("approve") && !after.contains("request") { return ReviewVerdict.approved.rawValue }
+      if after.contains("request_changes") || after.contains("request changes") { return ReviewVerdict.needsChanges.rawValue }
       if after.contains("comment") { return "comment" }
     }
     // Fallback: look for verdict in markdown
-    if lowered.contains("verdict: approve") || lowered.contains("verdict:** approve") { return "approved" }
-    if lowered.contains("verdict: request_changes") || lowered.contains("verdict:** request") { return "needsChanges" }
+    if lowered.contains("verdict: approve") || lowered.contains("verdict:** approve") { return ReviewVerdict.approved.rawValue }
+    if lowered.contains("verdict: request_changes") || lowered.contains("verdict:** request") { return ReviewVerdict.needsChanges.rawValue }
     if lowered.contains("verdict: comment") || lowered.contains("verdict:** comment") { return "comment" }
     return nil
   }
