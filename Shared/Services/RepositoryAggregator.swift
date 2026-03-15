@@ -557,12 +557,27 @@ final class RepositoryAggregator {
          Date().timeIntervalSince(lastIndexed) > 7 * 24 * 3600 {
         return .stale
       }
+      // Check if the working tree changed since last index.
+      // .git/index mtime updates on commit, checkout, merge, stage — any change
+      // that means the RAG index may be out of date.
+      if let lastIndexed = rag.lastIndexedAt,
+         let gitModified = gitIndexModifiedDate(at: rag.rootPath),
+         gitModified > lastIndexed {
+        return .needsUpdate
+      }
       return .analyzed
     }
     if rag.chunkCount > 0 {
       return .indexed
     }
     return .notIndexed
+  }
+
+  /// Returns the modification date of `.git/index`, which changes on commit, merge,
+  /// checkout, stage, and pull — any operation that modifies the working tree.
+  private func gitIndexModifiedDate(at rootPath: String) -> Date? {
+    let gitIndexPath = (rootPath as NSString).appendingPathComponent(".git/index")
+    return (try? FileManager.default.attributesOfItem(atPath: gitIndexPath))?[.modificationDate] as? Date
   }
 
   /// Map TrackedRemoteRepo + pull state → UnifiedRepository.PullStatus

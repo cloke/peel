@@ -94,10 +94,11 @@ struct RAGTabView: View {
       // the peer already enriched; we only need to keep index/analysis fresh.
       if repo.isTracked, !isAutoMaintaining, !isAnalyzing, !isEnriching, !isCurrentlyIndexing {
         let isStale = repo.ragStatus == .stale
+        let hasNewChanges = repo.ragStatus == .needsUpdate
         let hasUnanalyzed = (analysisState?.unanalyzedCount ?? 0) > 0
         let lastSyncWasPull = swarm.localRagArtifactStatus?.lastSyncDirection == .pull
         let hasUnenriched = !lastSyncWasPull && max(0, (analysisState?.analyzedCount ?? 0) - enrichedChunks) > 0
-        if isStale || hasUnanalyzed || hasUnenriched {
+        if isStale || hasNewChanges || hasUnanalyzed || hasUnenriched {
           await autoMaintain()
         }
       }
@@ -337,9 +338,10 @@ struct RAGTabView: View {
     let analyzed = analysisState?.analyzedCount ?? 0
     let unenriched = max(0, analyzed - enrichedChunks)
     let isStale = repo.ragStatus == .stale
+    let hasNewChanges = repo.ragStatus == .needsUpdate
     let isIndexed = repo.ragStatus != nil && repo.ragStatus != .notIndexed
-    let hasWork = isIndexed && (isStale || unanalyzed > 0 || unenriched > 0)
-    let allGood = isIndexed && !isStale && unanalyzed == 0 && unenriched == 0 && totalChunks > 0
+    let hasWork = isIndexed && (isStale || hasNewChanges || unanalyzed > 0 || unenriched > 0)
+    let allGood = isIndexed && !isStale && !hasNewChanges && unanalyzed == 0 && unenriched == 0 && totalChunks > 0
 
     if hasWork || allGood {
       Divider()
@@ -361,6 +363,16 @@ struct RAGTabView: View {
             icon: "exclamationmark.triangle.fill",
             color: .yellow,
             text: "Index is stale",
+            buttonLabel: "Re-Index",
+            isActive: isCurrentlyIndexing
+          ) {
+            Task { await indexRepo(force: false) }
+          }
+        } else if hasNewChanges {
+          maintenanceRow(
+            icon: "arrow.triangle.2.circlepath",
+            color: .orange,
+            text: "New changes since last index",
             buttonLabel: "Re-Index",
             isActive: isCurrentlyIndexing
           ) {
@@ -393,7 +405,7 @@ struct RAGTabView: View {
         }
 
         // "Fix All" button when multiple things need doing
-        let actionCount = (isStale ? 1 : 0) + (unanalyzed > 0 ? 1 : 0) + (unenriched > 0 ? 1 : 0)
+        let actionCount = ((isStale || hasNewChanges) ? 1 : 0) + (unanalyzed > 0 ? 1 : 0) + (unenriched > 0 ? 1 : 0)
         if actionCount > 1, !isCurrentlyIndexing, !isAnalyzing, !isEnriching {
           HStack {
             Spacer()
@@ -551,6 +563,7 @@ struct RAGTabView: View {
     case .indexed, .analyzed: return .green
     case .indexing: return .orange
     case .analyzing: return .purple
+    case .needsUpdate: return .orange
     case .stale: return .yellow
     case .notIndexed, .none: return .secondary
     }
@@ -562,6 +575,7 @@ struct RAGTabView: View {
     case .analyzed: return "checkmark.seal.fill"
     case .indexing: return "arrow.triangle.2.circlepath"
     case .analyzing: return "cpu.fill"
+    case .needsUpdate: return "arrow.triangle.2.circlepath"
     case .stale: return "exclamationmark.triangle"
     case .notIndexed, .none: return "magnifyingglass.circle"
     }
@@ -1290,8 +1304,8 @@ struct RAGTabView: View {
     isAutoMaintaining = true
     defer { isAutoMaintaining = false; autoMaintainStep = nil }
 
-    // Step 1: Re-index if stale
-    if repo.ragStatus == .stale {
+    // Step 1: Re-index if stale or has new changes
+    if repo.ragStatus == .stale || repo.ragStatus == .needsUpdate {
       autoMaintainStep = "Re-indexing..."
       await indexRepo(force: false)
     }

@@ -121,7 +121,12 @@ struct RepoDetailView: View {
           }
 
           if let rag = repo.ragStatus, rag != .notIndexed {
-            RepoStatusPill(text: rag.displayName, systemImage: rag.systemImage, color: .purple)
+            Button {
+              selectedTab.wrappedValue = .rag
+            } label: {
+              RepoStatusPill(text: rag.displayName, systemImage: rag.systemImage, color: ragChipColor(rag))
+            }
+            .buttonStyle(.plain)
           }
         }
       }
@@ -174,6 +179,17 @@ struct RepoDetailView: View {
     case .upToDate: return .green
     case .updated: return .green
     case .error: return .red
+    }
+  }
+
+  private func ragChipColor(_ status: UnifiedRepository.RAGStatus) -> Color {
+    switch status {
+    case .analyzed: return .green
+    case .needsUpdate: return .orange
+    case .stale: return .yellow
+    case .indexing, .analyzing: return .blue
+    case .indexed: return .purple
+    case .notIndexed: return .secondary
     }
   }
 }

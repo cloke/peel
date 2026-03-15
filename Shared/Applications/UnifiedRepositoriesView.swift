@@ -112,6 +112,7 @@ struct RepoSidebarRow: View {
     case .indexed: return .green
     case .analyzing: return .blue
     case .analyzed: return .green
+    case .needsUpdate: return .orange
     case .stale: return .orange
     }
   }
@@ -123,6 +124,7 @@ struct RepoSidebarRow: View {
     case .indexed: return "RAG index up to date"
     case .analyzing: return "Analyzing repository…"
     case .analyzed: return "Analysis complete"
+    case .needsUpdate: return "New changes detected — re-index to update"
     case .stale: return "RAG index is outdated — re-index to update"
     }
   }

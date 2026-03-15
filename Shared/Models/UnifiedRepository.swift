@@ -188,6 +188,7 @@ extension UnifiedRepository {
     case indexed
     case analyzing(progress: Double)
     case analyzed
+    case needsUpdate
     case stale
 
     var displayName: String {
@@ -197,6 +198,7 @@ extension UnifiedRepository {
       case .indexed: return "Indexed"
       case .analyzing(let p): return "Analyzing \(Int(p * 100))%"
       case .analyzed: return "Analyzed"
+      case .needsUpdate: return "Needs Update"
       case .stale: return "Stale"
       }
     }
@@ -208,6 +210,7 @@ extension UnifiedRepository {
       case .indexed: return "checkmark.circle"
       case .analyzing: return "gearshape.2"
       case .analyzed: return "checkmark.seal"
+      case .needsUpdate: return "arrow.triangle.2.circlepath"
       case .stale: return "exclamationmark.triangle"
       }
     }
