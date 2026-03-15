@@ -1881,36 +1881,50 @@ public final class FirebaseService {
 
     let taskRef = tasksCollection(swarmId: swarmId).document(taskId)
 
+    // Capture values for the transaction closure (which runs off @MainActor).
+    // Firestore, DocumentReference, and String are all internally thread-safe.
+    let claimUserId = userId
+    let claimWorkerId = workerId
+    let claimedStatus = ChainStatus.claimed.rawValue
+    let pendingStatus = ChainStatus.pending.rawValue
+
     do {
-      let result = try await db.runTransaction { transaction, errorPointer -> Any? in
-        let taskDoc: DocumentSnapshot
-        do {
-          taskDoc = try transaction.getDocument(taskRef)
-        } catch {
-          errorPointer?.pointee = error as NSError
-          return false
+      let claimed: Bool = try await withCheckedThrowingContinuation { continuation in
+        taskRef.firestore.runTransaction({ transaction, errorPointer -> Any? in
+          let taskDoc: DocumentSnapshot
+          do {
+            taskDoc = try transaction.getDocument(taskRef)
+          } catch {
+            errorPointer?.pointee = error as NSError
+            return false
+          }
+
+          guard let data = taskDoc.data(),
+                let status = data["status"] as? String,
+                status == pendingStatus else {
+            return false
+          }
+
+          if let claimedBy = data["claimedBy"] as? String, !claimedBy.isEmpty {
+            return false
+          }
+
+          transaction.updateData([
+            "status": claimedStatus,
+            "claimedBy": claimUserId,
+            "claimedByWorker": claimWorkerId,
+            "claimedAt": FieldValue.serverTimestamp()
+          ], forDocument: taskRef)
+
+          return true
+        }) { result, error in
+          if let error {
+            continuation.resume(throwing: error)
+          } else {
+            continuation.resume(returning: result as? Bool ?? false)
+          }
         }
-
-        guard let data = taskDoc.data(),
-              let status = data["status"] as? String,
-              status == ChainStatus.pending.rawValue else {
-          return false
-        }
-
-        if let claimedBy = data["claimedBy"] as? String, !claimedBy.isEmpty {
-          return false
-        }
-
-        transaction.updateData([
-          "status": ChainStatus.claimed.rawValue,
-          "claimedBy": userId,
-          "claimedByWorker": workerId,
-          "claimedAt": FieldValue.serverTimestamp()
-        ], forDocument: taskRef)
-
-        return true
       }
-      let claimed = result as? Bool ?? false
 
       if claimed {
         logger.info("Claimed task \(taskId)")

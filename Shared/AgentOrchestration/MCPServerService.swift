@@ -707,7 +707,7 @@ public final class MCPServerService {
   public var permissionsVersion: Int = 0
   /// Per-session auth token required for non-localhost MCP connections.
   /// Generated on server start, must be passed in the Authorization header.
-  public private(set) var lanSessionToken: String = ""
+  public internal(set) var lanSessionToken: String = ""
 
   struct ConnectionState {
     var buffer = Data()

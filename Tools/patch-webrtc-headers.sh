@@ -8,47 +8,80 @@
 # 3. Umbrella header includes iOS-only headers (UIKit, AVAudioSession)
 #
 # This script copies headers from the Catalyst slice and patches them.
-# Run after SPM package resolution or clean build.
+# It patches BOTH the SourcePackages xcframework AND the DerivedData
+# framework copy (which the Clang dependency scanner uses).
 #
 # Usage:
 #   ./Tools/patch-webrtc-headers.sh
-#   ./Tools/patch-webrtc-headers.sh /path/to/build/dir
+#   ./Tools/patch-webrtc-headers.sh /path/to/derived-data-root
 #
 
 set -e
 
-BUILD_DIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/build}"
-XCF_BASE="$BUILD_DIR/SourcePackages/artifacts/webrtc/WebRTC/WebRTC.xcframework"
+# When called from Xcode build phase: $1 = ${BUILD_DIR}/../.. = DerivedData/.../Build
+# When called manually: no args, use project build/ dir
+SEARCH_ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)/build}"
+
+# --- Locate the xcframework (search up from SEARCH_ROOT if needed) ---
+find_xcframework() {
+  local dir="$1"
+  # Search the given dir and up to 2 parents
+  for _ in 1 2 3; do
+    local candidate="$dir/SourcePackages/artifacts/webrtc/WebRTC/WebRTC.xcframework"
+    if [[ -d "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+XCF_BASE=$(find_xcframework "$SEARCH_ROOT") || true
+if [[ -z "$XCF_BASE" ]]; then
+  # Also try the project build/ dir as fallback
+  PROJECT_BUILD="$(cd "$(dirname "$0")/.." && pwd)/build"
+  XCF_BASE=$(find_xcframework "$PROJECT_BUILD") || true
+fi
+
+if [[ -z "$XCF_BASE" ]]; then
+  echo "⚠️  WebRTC xcframework not found — skipping patch"
+  exit 0
+fi
+
 MACOS_HEADERS="$XCF_BASE/macos-x86_64_arm64/WebRTC.framework/Versions/A/Headers"
 MACOS_MODULES="$XCF_BASE/macos-x86_64_arm64/WebRTC.framework/Versions/A/Modules"
 CATALYST_HEADERS="$XCF_BASE/ios-x86_64_arm64-maccatalyst/WebRTC.framework/Versions/A/Headers"
-
-if [[ ! -d "$XCF_BASE" ]]; then
-  echo "⚠️  WebRTC xcframework not found at $XCF_BASE — skipping patch"
-  exit 0
-fi
 
 if [[ ! -d "$CATALYST_HEADERS" ]]; then
   echo "❌ Catalyst headers not found at $CATALYST_HEADERS"
   exit 1
 fi
 
-# Step 1: Copy all headers from Catalyst slice to macOS slice
-echo "📋 Copying headers from Catalyst slice..."
-BEFORE=$(ls "$MACOS_HEADERS"/*.h 2>/dev/null | wc -l | tr -d ' ')
-cp "$CATALYST_HEADERS"/*.h "$MACOS_HEADERS/"
-AFTER=$(ls "$MACOS_HEADERS"/*.h 2>/dev/null | wc -l | tr -d ' ')
-echo "   Headers: $BEFORE → $AFTER"
+# --- Helper: patch a single Headers+Modules directory pair ---
+patch_headers() {
+  local target_headers="$1"
+  local target_modules="$2"
+  local label="$3"
 
-# Step 2: Fix internal Google import paths (sdk/objc/base/*)
-echo "🔧 Fixing import paths..."
-sed -i '' 's|#import "sdk/objc/base/\(.*\)"|#import "\1"|g' "$MACOS_HEADERS"/*.h
-REMAINING=$(grep -rc 'sdk/objc' "$MACOS_HEADERS"/*.h 2>/dev/null | grep -v ':0$' | wc -l | tr -d ' ')
-echo "   Remaining sdk/objc references: $REMAINING"
+  if [[ ! -d "$target_headers" ]]; then
+    return
+  fi
 
-# Step 3: Write minimal umbrella header (excludes iOS-only headers)
-echo "📝 Writing macOS-compatible umbrella header..."
-cat > "$MACOS_HEADERS/WebRTC.h" << 'UMBRELLA'
+  local before=$(ls "$target_headers"/*.h 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$before" -gt 10 ]]; then
+    # Already patched
+    return
+  fi
+
+  # Copy all headers from Catalyst slice
+  cp "$CATALYST_HEADERS"/*.h "$target_headers/"
+
+  # Fix internal Google import paths (sdk/objc/base/*)
+  sed -i '' 's|#import "sdk/objc/base/\(.*\)"|#import "\1"|g' "$target_headers"/*.h
+
+  # Write macOS-compatible umbrella header
+  cat > "$target_headers/WebRTC.h" << 'UMBRELLA'
 /*
  *  Copyright 2025 The WebRTC project authors. All Rights Reserved.
  *  Patched umbrella header for macOS native — data channels only.
@@ -153,9 +186,9 @@ cat > "$MACOS_HEADERS/WebRTC.h" << 'UMBRELLA'
 #import <WebRTC/RTCVideoEncoderAV1.h>
 UMBRELLA
 
-# Step 4: Write modulemap with excluded iOS-only headers
-echo "📝 Writing modulemap with header exclusions..."
-cat > "$MACOS_MODULES/module.modulemap" << 'MODULEMAP'
+  # Write modulemap
+  if [[ -d "$target_modules" ]]; then
+    cat > "$target_modules/module.modulemap" << 'MODULEMAP'
 framework module WebRTC {
   umbrella header "WebRTC.h"
   exclude header "RTCEAGLVideoView.h"
@@ -175,5 +208,35 @@ framework module WebRTC {
   module * { export * }
 }
 MODULEMAP
+  fi
+
+  local after=$(ls "$target_headers"/*.h 2>/dev/null | wc -l | tr -d ' ')
+  echo "📋 $label: 1 → $after headers"
+}
+
+# --- Patch 1: Source xcframework (SourcePackages) ---
+echo "Patching source xcframework..."
+patch_headers "$MACOS_HEADERS" "$MACOS_MODULES" "xcframework"
+
+# --- Patch 2: DerivedData Build/Products/Debug copy ---
+# Find the DerivedData root by searching up from SEARCH_ROOT for Build/Products
+find_dd_framework() {
+  local dir="$1"
+  for _ in 1 2 3 4; do
+    local candidate="$dir/Build/Products/Debug/WebRTC.framework/Versions/A/Headers"
+    if [[ -d "$candidate" ]]; then
+      echo "$dir/Build/Products/Debug/WebRTC.framework"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+DD_FRAMEWORK=$(find_dd_framework "$SEARCH_ROOT") || true
+if [[ -n "$DD_FRAMEWORK" && -d "$DD_FRAMEWORK" ]]; then
+  echo "Patching DerivedData framework copy..."
+  patch_headers "$DD_FRAMEWORK/Versions/A/Headers" "$DD_FRAMEWORK/Versions/A/Modules" "DerivedData"
+fi
 
 echo "✅ WebRTC macOS headers patched successfully"
