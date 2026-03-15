@@ -98,34 +98,39 @@ public final class RepoRegistry: Sendable {
   /// - Parameter path: Path to the git repository
   /// - Returns: The remote URL or nil if not found
   private func discoverRemoteURL(for path: String) async -> String? {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.arguments = ["remote", "get-url", "origin"]
-    process.currentDirectoryURL = URL(fileURLWithPath: path)
-    
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
-    
-    do {
-      try process.run()
-      process.waitUntilExit()
-      
-      guard process.terminationStatus == 0 else {
+    // Run git process off the main actor to avoid blocking UI.
+    // RepoRegistry is @MainActor but process.waitUntilExit() is synchronous
+    // and can take seconds per repo — with many repos this causes app hangs.
+    let repoPath = path
+    return await Task.detached(priority: .userInitiated) {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+      process.arguments = ["remote", "get-url", "origin"]
+      process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+
+      let pipe = Pipe()
+      process.standardOutput = pipe
+      process.standardError = FileHandle.nullDevice
+
+      do {
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+          return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !output.isEmpty else {
+          return nil
+        }
+
+        return output
+      } catch {
         return nil
       }
-      
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      guard let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !output.isEmpty else {
-        return nil
-      }
-      
-      return output
-    } catch {
-      logger.error("Failed to get remote URL for \(path): \(error.localizedDescription)")
-      return nil
-    }
+    }.value
   }
   
   // MARK: - URL Normalization
