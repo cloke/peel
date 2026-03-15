@@ -22,34 +22,18 @@ public final class WebRTCClient: NSObject, Sendable {
   private let state = ClientState()
 
   /// STUN/TURN servers for ICE candidate gathering.
-  /// Includes STUN for direct connectivity discovery and TURN for relay fallback.
-  /// Multiple providers for resilience — some networks block specific servers.
+  /// Minimal set to avoid DNS thread explosion — each URL triggers getaddrinfo
+  /// which spawns threads contending on _mdns_mutex. Too many URLs (previously 12)
+  /// caused 139+ threads deadlocked on mDNS, leading to malloc zone crashes.
   public static let defaultICEServers: [RTCIceServer] = [
-    // Google STUN + Cloudflare STUN (free, for NAT discovery only)
+    // Single STUN server for NAT discovery
     RTCIceServer(urlStrings: [
       "stun:stun.l.google.com:19302",
-      "stun:stun1.l.google.com:19302",
-      "stun:stun.cloudflare.com:3478",
     ]),
-    // Metered.ca Open Relay TURN servers (free tier, 20GB/month)
-    // Multiple ports for firewall bypass
-    RTCIceServer(
-      urlStrings: [
-        "turn:openrelay.metered.ca:80",
-        "turn:openrelay.metered.ca:443",
-        "turn:openrelay.metered.ca:443?transport=tcp",
-        "turns:openrelay.metered.ca:443",
-      ],
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    ),
-    // Metered.ca global relay (same credentials, different endpoint)
+    // TURN relay — UDP (port 80 for firewall bypass) + TLS (for strict firewalls)
     RTCIceServer(
       urlStrings: [
         "turn:global.relay.metered.ca:80",
-        "turn:global.relay.metered.ca:80?transport=tcp",
-        "turn:global.relay.metered.ca:443",
-        "turn:global.relay.metered.ca:443?transport=tcp",
         "turns:global.relay.metered.ca:443",
       ],
       username: "openrelayproject",
@@ -331,7 +315,13 @@ public final class WebRTCClient: NSObject, Sendable {
     let config = RTCConfiguration()
     config.iceServers = iceServers
     config.sdpSemantics = .unifiedPlan
-    config.continualGatheringPolicy = .gatherContinually
+    // Use gatherOnce to prevent continuous DNS resolution thread storm.
+    // With gatherContinually + multiple STUN/TURN servers, each gather cycle
+    // spawns getaddrinfo threads that deadlock on _mdns_mutex, causing 100+
+    // threads and eventual malloc zone crash. PeerSession reconnect logic
+    // creates a fresh WebRTCClient when needed, so re-gathering is handled.
+    config.continualGatheringPolicy = .gatherOnce
+    config.iceCandidatePoolSize = 0
     // Allow relay candidates through TURN even when direct path exists
     config.iceTransportPolicy = .all
     // Needed for data-only connections
