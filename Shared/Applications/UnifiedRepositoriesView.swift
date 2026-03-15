@@ -1033,9 +1033,9 @@ struct RepositoriesCommandCenter: View {
         }
       }
 
-      // Active runs that aren't in the approval section
+      // Active runs that aren't in the approval section or PR Reviews section
       let nonApprovalRuns = allActiveRuns.filter { run in
-        !pendingApprovalRuns.contains(where: { $0.id == run.id })
+        run.kind != .prReview && !pendingApprovalRuns.contains(where: { $0.id == run.id })
       }
       ForEach(nonApprovalRuns) { run in
         GroupBox {

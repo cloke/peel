@@ -130,7 +130,7 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
     [
       "repositories", "activity", "swarm",
       // Granular sidebar sections
-      "home", "prReviews", "templates", "agentRuns", "worktrees", "chat", "brew",
+      "home", "templates", "agentRuns", "worktrees", "chat", "brew",
     ]
   }
 
@@ -139,7 +139,6 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
     case "repositories", "home": return "Repositories"
     case "activity": return "Activity"
     case "swarm": return "Swarm Console"
-    case "prReviews": return "PR Reviews"
     case "templates": return "Templates"
     case "agentRuns": return "Agent Runs"
     case "worktrees": return "Worktrees"
@@ -266,7 +265,7 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
     switch viewId {
     case "home", "repositories":
       parentTool = "repositories"
-    case "prReviews", "templates", "agentRuns", "worktrees", "chat", "activity":
+    case "templates", "agentRuns", "worktrees", "chat", "activity":
       parentTool = "activity"
     case "swarm":
       parentTool = "activity"

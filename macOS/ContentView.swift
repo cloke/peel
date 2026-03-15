@@ -40,7 +40,6 @@ enum SidebarSelection: Hashable {
   case activityDashboard
   case activityItem(UUID)  // Non-chain activity item → shows dashboard
   case chain(UUID)
-  case prReviews
   case reviewDashboard
   case templates
   case agentRuns
@@ -174,7 +173,7 @@ struct ContentView: View {
       if let sel = newValue {
         switch sel {
         case .repo, .repoCommandCenter: currentSection = .repositories
-        case .activityDashboard, .activityItem, .chain, .prReviews, .reviewDashboard, .templates,
+        case .activityDashboard, .activityItem, .chain, .reviewDashboard, .templates,
              .agentRuns, .worktrees: currentSection = .activity
         case .chat: currentSection = .activity
         case .swarmConsole: currentSection = .activity
@@ -275,9 +274,6 @@ struct ContentView: View {
 
       // Activity tools — always visible
       Section("Activity") {
-        Label("PR Reviews", systemImage: "text.badge.checkmark")
-          .badge(prReviewCount)
-          .tag(SidebarSelection.prReviews)
         Label("Review Dashboard", systemImage: "checklist.checked")
           .badge(pendingReviewCount)
           .tag(SidebarSelection.reviewDashboard)
@@ -478,9 +474,6 @@ struct ContentView: View {
     case .activityItem:
       RepositoriesCommandCenter()
 
-    case .prReviews:
-      RunsListView(mcpServer: mcpServer)
-
     case .reviewDashboard:
       ReviewDashboardView(mcpServer: mcpServer)
 
@@ -532,10 +525,6 @@ struct ContentView: View {
 
   private var runningChainCount: Int {
     aggregator.allActiveChains.count
-  }
-
-  private var prReviewCount: Int {
-    mcpServer.prReviewQueue.activeItems.count
   }
 
   private var pendingReviewCount: Int {
@@ -666,8 +655,6 @@ struct ContentView: View {
     switch viewId {
     case "home", "repositories":
       sidebarSelection = .repoCommandCenter
-    case "prReviews":
-      sidebarSelection = .prReviews
     case "templates":
       sidebarSelection = .templates
     case "agentRuns":
