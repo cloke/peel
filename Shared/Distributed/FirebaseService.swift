@@ -1279,6 +1279,7 @@ public final class FirebaseService {
   public func fetchWorker(swarmId: String, workerId: String) async throws -> FirestoreWorker? {
     let doc = try await workersCollection(swarmId: swarmId).document(workerId).getDocument()
     guard let data = doc.data() else { return nil }
+    let caps = data["capabilities"] as? [String: Any]
     return FirestoreWorker(
       id: doc.documentID,
       ownerId: data["ownerId"] as? String ?? "",
@@ -1294,7 +1295,8 @@ public final class FirebaseService {
       wanAddress: data["wanAddress"] as? String,
       wanPort: (data["wanPort"] as? Int).map { UInt16($0) },
       stunAddress: data["stunAddress"] as? String,
-      stunPort: (data["stunPort"] as? Int).map { UInt16($0) }
+      stunPort: (data["stunPort"] as? Int).map { UInt16($0) },
+      indexedRepos: caps?["indexedRepos"] as? [String] ?? []
     )
   }
 
@@ -1325,6 +1327,7 @@ public final class FirebaseService {
           
           let newWorkers = snapshot.documents.compactMap { doc -> FirestoreWorker? in
             let data = doc.data()
+            let caps = data["capabilities"] as? [String: Any]
             return FirestoreWorker(
               id: doc.documentID,
               ownerId: data["ownerId"] as? String ?? "",
@@ -1340,7 +1343,8 @@ public final class FirebaseService {
               wanAddress: data["wanAddress"] as? String,
               wanPort: (data["wanPort"] as? Int).map { UInt16($0) },
               stunAddress: data["stunAddress"] as? String,
-              stunPort: (data["stunPort"] as? Int).map { UInt16($0) }
+              stunPort: (data["stunPort"] as? Int).map { UInt16($0) },
+              indexedRepos: caps?["indexedRepos"] as? [String] ?? []
             )
           }
           

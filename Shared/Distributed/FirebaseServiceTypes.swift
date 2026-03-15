@@ -259,6 +259,9 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   public let stunAddress: String?
   public let stunPort: UInt16?
 
+  /// Normalized remote URLs of repos this worker has indexed locally
+  public let indexedRepos: [String]
+
   /// Convenience alias
   public var workerId: String { id }
   

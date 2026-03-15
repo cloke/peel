@@ -304,6 +304,20 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     )
   }
   
+  /// Return a copy with updated indexed repos list
+  public func withIndexedRepos(_ repos: [String]) -> WorkerCapabilities {
+    WorkerCapabilities(
+      deviceId: deviceId, deviceName: deviceName, displayName: displayName,
+      platform: platform, gpuCores: gpuCores, neuralEngineCores: neuralEngineCores,
+      memoryGB: memoryGB, storageAvailableGB: storageAvailableGB,
+      embeddingModel: embeddingModel, embeddingDimensions: embeddingDimensions,
+      indexedRepos: repos, gitCommitHash: gitCommitHash,
+      lanAddress: lanAddress, lanPort: lanPort,
+      wanAddress: wanAddress, wanPort: wanPort,
+      stunAddress: stunAddress, stunPort: stunPort
+    )
+  }
+
   /// Get the git commit hash embedded at build time
   private static func getGitCommitHash() -> String? {
     // Prefer repo hash for runtime accuracy, then fall back to Info.plist

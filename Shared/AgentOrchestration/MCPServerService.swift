@@ -1113,6 +1113,9 @@ public final class MCPServerService {
       lastRagError = error.localizedDescription
       lastRagRefreshAt = Date()
     }
+    // Keep swarm capabilities in sync with local indexed repos
+    let repoIds = ragRepos.compactMap(\.repoIdentifier)
+    SwarmCoordinator.shared.updateIndexedRepos(repoIds)
     await refreshRagArtifactStatus()
   }
 

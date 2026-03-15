@@ -653,6 +653,10 @@ public final class SwarmCoordinator {
         metadata["version"] = hash
         metadata["gitCommitHash"] = hash
       }
+      // Keep indexedRepos current in Firestore (dot notation updates nested field)
+      if let repos = self?.capabilities.indexedRepos {
+        metadata["capabilities.indexedRepos"] = repos
+      }
       return metadata
     }
     FirebaseService.shared.onWorkersSnapshotChanged = { [weak self] in
@@ -1527,6 +1531,12 @@ public final class SwarmCoordinator {
 
   public func updateLocalRagArtifactStatus(_ status: RAGArtifactStatus?) {
     localRagArtifactStatus = status
+  }
+
+  /// Update the local capabilities with the current list of indexed repos.
+  /// Called after RAG indexing or sync to keep peer views and heartbeats accurate.
+  public func updateIndexedRepos(_ repos: [String]) {
+    capabilities = capabilities.withIndexedRepos(repos)
   }
 
   /// Firestore workers that are online but not TCP-connected (available for on-demand pull).
@@ -2989,6 +2999,7 @@ extension SwarmCoordinator {
       neuralEngineCores: 0,
       memoryGB: 0,
       storageAvailableGB: 0,
+      indexedRepos: worker?.indexedRepos ?? [],
       gitCommitHash: worker?.gitCommitHash,
       lanAddress: worker?.lanAddress,
       lanPort: worker?.lanPort,
