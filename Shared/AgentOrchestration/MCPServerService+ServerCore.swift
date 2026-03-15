@@ -706,6 +706,11 @@ extension MCPServerService {
     guard !isRunning else { return }
     lastError = nil
 
+    // Generate a per-session auth token for LAN connections
+    var tokenBytes = [UInt8](repeating: 0, count: 32)
+    _ = SecRandomCopyBytes(kSecRandomDefault, tokenBytes.count, &tokenBytes)
+    lanSessionToken = Data(tokenBytes).base64EncodedString()
+
     guard port >= 1024 && port <= 65535 else {
       lastError = "Port must be between 1024 and 65535"
       return
@@ -760,12 +765,14 @@ extension MCPServerService {
     }
     connections = [:]
     connectionStates = [:]
+    connectionIsLocal = [:]
     isRunning = false
   }
 
   private func handleConnection(_ connection: NWConnection) {
+    let isLocal = isLocalConnection(connection)
     // In LAN mode, accept all connections; otherwise only localhost
-    guard lanModeEnabled || isLocalConnection(connection) else {
+    guard lanModeEnabled || isLocal else {
       connection.cancel()
       return
     }
@@ -773,6 +780,7 @@ extension MCPServerService {
     let id = UUID()
     connections[id] = connection
     connectionStates[id] = ConnectionState()
+    connectionIsLocal[id] = isLocal
 
     connection.stateUpdateHandler = { [weak self] state in
       guard case .failed = state else { return }
@@ -807,7 +815,7 @@ extension MCPServerService {
     guard var state = connectionStates[id] else { return }
     if let request = parseRequest(from: &state.buffer) {
       connectionStates[id] = state
-      handleRequest(request, on: connection)
+      handleRequest(request, on: connection, connectionId: id)
     } else {
       connectionStates[id] = state
     }
@@ -817,6 +825,7 @@ extension MCPServerService {
     connections[id]?.cancel()
     connections[id] = nil
     connectionStates[id] = nil
+    connectionIsLocal[id] = nil
   }
 
   private func isLocalConnection(_ connection: NWConnection) -> Bool {
@@ -880,14 +889,26 @@ extension MCPServerService {
     return HTTPRequest(method: method, path: path, headers: headers, body: body)
   }
 
-  private func handleRequest(_ request: HTTPRequest, on connection: NWConnection) {
+  private func handleRequest(_ request: HTTPRequest, on connection: NWConnection, connectionId: UUID) {
     guard request.method.uppercased() == "POST", request.path == "/rpc" else {
       sendHTTPResponse(status: 404, body: Data("{\"error\":\"Not Found\"}".utf8), on: connection)
       return
     }
 
+    let isLocal = connectionIsLocal[connectionId] ?? true
+
+    // Require session token for non-localhost connections
+    if !isLocal {
+      let authHeader = request.headers["authorization"] ?? ""
+      let expectedToken = "Bearer \(lanSessionToken)"
+      if authHeader != expectedToken {
+        sendHTTPResponse(status: 401, body: Data("{\"error\":\"Unauthorized: valid session token required for LAN connections\"}".utf8), on: connection)
+        return
+      }
+    }
+
     Task {
-      let (_, responseBody) = await handleRPC(body: request.body)
+      let (_, responseBody) = await handleRPC(body: request.body, isLocalConnection: isLocal)
       // JSON-RPC spec: Always return HTTP 200 for valid JSON-RPC responses.
       // Error information is in the JSON body, not the HTTP status.
       // Using HTTP 4xx/5xx causes VS Code MCP client to kill the connection.
@@ -895,7 +916,7 @@ extension MCPServerService {
     }
   }
 
-  private func handleRPC(body: Data) async -> (Int, Data) {
+  private func handleRPC(body: Data, isLocalConnection: Bool = true) async -> (Int, Data) {
     let startTime = Date()
     var methodForLog = "unknown"
     var statusCode = 500
@@ -961,7 +982,7 @@ extension MCPServerService {
         return (200, JSONRPCResponseBuilder.makeResult(id: id, result: paginatedToolList(cursor: cursor)))
 
       case "tools/call":
-        let result = await handleToolCall(id: id, params: params)
+        let result = await handleToolCall(id: id, params: params, isLocalConnection: isLocalConnection)
         statusCode = result.0
         return result
 
@@ -995,10 +1016,16 @@ extension MCPServerService {
     return await handleToolCall(id: id, params: params)
   }
 
-  private func handleToolCall(id: Any?, params: [String: Any]?) async -> (Int, Data) {
+  private func handleToolCall(id: Any?, params: [String: Any]?, isLocalConnection: Bool = true) async -> (Int, Data) {
     guard let params, let name = params["name"] as? String else {
       await telemetryProvider.warning("Invalid tool call params", metadata: [:])
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Invalid params"))
+    }
+
+    // Block sensitive tools for non-localhost (LAN) connections
+    if !isLocalConnection && RemoteToolPolicy.sensitiveTools.contains(name) {
+      await telemetryProvider.warning("Sensitive tool blocked for LAN connection", metadata: ["name": name])
+      return (403, JSONRPCResponseBuilder.makeError(id: id, code: -32010, message: "Tool '\(name)' is not available over LAN connections"))
     }
 
     guard let resolvedName = resolveToolName(name),

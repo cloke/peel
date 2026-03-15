@@ -86,6 +86,17 @@ public struct LocalRAGArtifactBundle: Sendable {
   }
 }
 
+enum RAGBundleError: LocalizedError {
+  case sha256Mismatch(file: String, expected: String, actual: String)
+
+  var errorDescription: String? {
+    switch self {
+    case .sha256Mismatch(let file, let expected, let actual):
+      return "RAG bundle integrity check failed for \(file): expected SHA256 \(expected.prefix(12))…, got \(actual.prefix(12))…"
+    }
+  }
+}
+
 enum LocalRAGArtifacts {
   static let formatVersion = 1
 
@@ -268,6 +279,16 @@ enum LocalRAGArtifacts {
     for file in manifest.files {
       let source = extractedRoot.appendingPathComponent(file.relativePath)
       let destination = baseURL.appendingPathComponent(file.relativePath)
+
+      // Verify SHA256 integrity if the manifest includes a hash
+      if !file.sha256.isEmpty, FileManager.default.fileExists(atPath: source.path) {
+        let fileData = try Data(contentsOf: source)
+        let actualHash = SHA256.hash(data: fileData).map { String(format: "%02x", $0) }.joined()
+        if actualHash != file.sha256 {
+          throw RAGBundleError.sha256Mismatch(file: file.relativePath, expected: file.sha256, actual: actualHash)
+        }
+      }
+
       try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
       if FileManager.default.fileExists(atPath: destination.path) {
         try FileManager.default.removeItem(at: destination)

@@ -1870,48 +1870,59 @@ public final class FirebaseService {
     return request.id.uuidString
   }
   
-  /// Claim a task for execution
-  /// Note: Uses simple check-and-update. For high-contention scenarios,
-  /// a transaction-based approach via Cloud Functions would be more robust.
+  /// Claim a task for execution using an atomic Firestore transaction.
+  /// The transaction ensures only one worker can claim a given task,
+  /// preventing race conditions from concurrent claim attempts.
   public func claimTask(swarmId: String, taskId: String) async throws -> Bool {
     guard let userId = currentUserId,
           let workerId = registeredWorkerId else {
       throw FirebaseError.notSignedIn
     }
-    
+
     let taskRef = tasksCollection(swarmId: swarmId).document(taskId)
-    
-    // First check if task is still pending
-    let taskDoc = try await taskRef.getDocument()
-    guard let data = taskDoc.data(),
-          let status = data["status"] as? String,
-          status == ChainStatus.pending.rawValue else {
-      logger.debug("Task \(taskId) is not pending, cannot claim")
-      return false
-    }
-    
-    // Check if already claimed
-    if let claimedBy = data["claimedBy"] as? String, !claimedBy.isEmpty {
-      logger.debug("Task \(taskId) already claimed by \(claimedBy)")
-      return false
-    }
-    
-    // Try to claim it
+
     do {
-      try await taskRef.updateData([
-        "status": ChainStatus.claimed.rawValue,
-        "claimedBy": userId,
-        "claimedByWorker": workerId,
-        "claimedAt": FieldValue.serverTimestamp()
-      ])
-      logger.info("Claimed task \(taskId)")
-      logActivity(.taskClaimed, message: "Claimed task", details: [
-        "taskId": taskId,
-        "workerId": workerId
-      ])
-      return true
+      let result = try await db.runTransaction { transaction, errorPointer -> Any? in
+        let taskDoc: DocumentSnapshot
+        do {
+          taskDoc = try transaction.getDocument(taskRef)
+        } catch {
+          errorPointer?.pointee = error as NSError
+          return false
+        }
+
+        guard let data = taskDoc.data(),
+              let status = data["status"] as? String,
+              status == ChainStatus.pending.rawValue else {
+          return false
+        }
+
+        if let claimedBy = data["claimedBy"] as? String, !claimedBy.isEmpty {
+          return false
+        }
+
+        transaction.updateData([
+          "status": ChainStatus.claimed.rawValue,
+          "claimedBy": userId,
+          "claimedByWorker": workerId,
+          "claimedAt": FieldValue.serverTimestamp()
+        ], forDocument: taskRef)
+
+        return true
+      }
+      let claimed = result as? Bool ?? false
+
+      if claimed {
+        logger.info("Claimed task \(taskId)")
+        logActivity(.taskClaimed, message: "Claimed task", details: [
+          "taskId": taskId,
+          "workerId": workerId
+        ])
+      } else {
+        logger.debug("Task \(taskId) not available for claiming")
+      }
+      return claimed
     } catch {
-      // Could fail if another worker claimed it first
       logger.warning("Failed to claim task \(taskId): \(error)")
       return false
     }

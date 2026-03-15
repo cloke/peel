@@ -40,6 +40,7 @@ import Network
 import SwiftData
 import WebRTCTransfer
 import os.log
+import CryptoKit
 
 // MARK: - Swarm Mode
 
@@ -1737,7 +1738,7 @@ public final class SwarmCoordinator {
           totalBytes: jsonData.count,
           embeddingCacheCount: overlayBundle.totalEmbeddings,
           lastIndexedAt: nil,
-          files: [RAGArtifactFileInfo(relativePath: "repo-overlay.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
+          files: [RAGArtifactFileInfo(relativePath: "repo-overlay.json", sizeBytes: jsonData.count, sha256: SHA256.hash(data: jsonData).map { String(format: "%02x", $0) }.joined(), modifiedAt: Date())],
           repos: []
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
@@ -1816,7 +1817,7 @@ public final class SwarmCoordinator {
           totalBytes: jsonData.count,
           embeddingCacheCount: 0,
           lastIndexedAt: nil,
-          files: [RAGArtifactFileInfo(relativePath: "repo-bundle.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
+          files: [RAGArtifactFileInfo(relativePath: "repo-bundle.json", sizeBytes: jsonData.count, sha256: SHA256.hash(data: jsonData).map { String(format: "%02x", $0) }.joined(), modifiedAt: Date())],
           repos: []
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
