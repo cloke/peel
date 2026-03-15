@@ -134,6 +134,9 @@ struct ReviewDashboardView: View {
 
     for run in runner.runs {
       for execution in run.executions {
+        // Prefer PR review output over raw execution output
+        let reviewOutput = run.prContext?.reviewOutput ?? ""
+        let output = !reviewOutput.isEmpty ? reviewOutput : execution.output
         let item = ReviewItem(
           id: execution.id,
           runId: run.id,
@@ -145,7 +148,8 @@ struct ReviewDashboardView: View {
           createdAt: execution.startedAt ?? execution.lastStatusChangeAt,
           reviewRecords: execution.reviewRecords,
           chainStepResults: execution.chainStepResults,
-          diffSummary: execution.diffSummary
+          diffSummary: execution.diffSummary,
+          output: output
         )
         items.append(item)
       }
@@ -229,6 +233,7 @@ struct ReviewItem: Identifiable {
   let reviewRecords: [ParallelWorktreeExecution.ReviewRecord]
   let chainStepResults: [ParallelWorktreeExecution.ChainStepSummary]
   let diffSummary: String?
+  let output: String
 
   var confidence: Double? {
     guard let verdictStr = chainStepResults.compactMap({ $0.reviewVerdict }).last else { return nil }
@@ -241,6 +246,13 @@ struct ReviewItem: Identifiable {
 
   var isReadyToMerge: Bool {
     status == .approved || status == .readyToMerge
+  }
+
+  /// Parsed agent review output, nil if no structured content.
+  var parsedReview: ParsedReview? {
+    guard !output.isEmpty else { return nil }
+    let parsed = parseReviewOutput(output)
+    return parsed.hasStructuredContent ? parsed : nil
   }
 }
 
@@ -376,8 +388,11 @@ struct ReviewDashboardRow: View {
           .foregroundStyle(.tertiary)
       }
 
-      // Diff summary preview
-      if let diff = item.diffSummary, !diff.isEmpty {
+      // Structured agent review (when available)
+      if let parsed = item.parsedReview {
+        ReviewOutputView(parsed: parsed, compact: true, showRawOutput: false, showStepLog: false)
+      } else if let diff = item.diffSummary, !diff.isEmpty {
+        // Diff summary fallback
         Text(diff)
           .font(.caption.monospaced())
           .foregroundStyle(.secondary)

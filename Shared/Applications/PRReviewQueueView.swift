@@ -14,6 +14,7 @@ import Github
 struct PRReviewQueueSection: View {
   @Environment(MCPServerService.self) private var mcpServer
   var onSelectPR: ((String, Int) -> Void)?
+  var onSelectRun: ((ParallelWorktreeRun) -> Void)?
 
   private var queue: PRReviewQueue { mcpServer.prReviewQueue }
 
@@ -43,7 +44,7 @@ struct PRReviewQueueSection: View {
       if !active.isEmpty {
         LazyVStack(spacing: 1) {
           ForEach(active, id: \.id) { item in
-            PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
+            PRReviewQueueRow(item: item, onSelectPR: onSelectPR, onSelectRun: onSelectRun)
           }
         }
         .background(Color(nsColor: .controlBackgroundColor))
@@ -54,7 +55,7 @@ struct PRReviewQueueSection: View {
         DisclosureGroup("Completed (\(completed.count))") {
           LazyVStack(spacing: 1) {
             ForEach(completed.prefix(10), id: \.id) { item in
-              PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
+              PRReviewQueueRow(item: item, onSelectPR: onSelectPR, onSelectRun: onSelectRun)
             }
           }
           .background(Color(nsColor: .controlBackgroundColor))
@@ -72,7 +73,24 @@ struct PRReviewQueueSection: View {
 struct PRReviewQueueRow: View {
   let item: PRReviewQueueItem
   var onSelectPR: ((String, Int) -> Void)?
+  var onSelectRun: ((ParallelWorktreeRun) -> Void)?
   @Environment(MCPServerService.self) private var mcpServer
+
+  /// The associated run for this PR, if one exists.
+  private var associatedRun: ParallelWorktreeRun? {
+    mcpServer.parallelWorktreeRunner?.runs.first { run in
+      run.kind == .prReview
+        && run.prContext?.prNumber == item.prNumber
+        && run.prContext?.repoName == item.repoName
+    }
+  }
+
+  /// Parsed review data from stored reviewOutput.
+  private var parsedReview: ParsedReview? {
+    guard !item.reviewOutput.isEmpty else { return nil }
+    let parsed = parseReviewOutput(item.reviewOutput)
+    return parsed.hasStructuredContent ? parsed : nil
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -98,6 +116,11 @@ struct PRReviewQueueRow: View {
 
         Spacer()
 
+        // Verdict + issue count (when review data exists)
+        if let parsed = parsedReview {
+          inlineReviewSummary(parsed)
+        }
+
         // Chain progress indicator
         chainProgressIndicator
 
@@ -107,11 +130,81 @@ struct PRReviewQueueRow: View {
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 8)
-      .contentShape(Rectangle())
-      .onTapGesture {
+
+      // Inline verdict banner for reviewed items
+      if let parsed = parsedReview {
+        VStack(alignment: .leading, spacing: 6) {
+          // Compact verdict banner
+          HStack(spacing: 6) {
+            Image(systemName: parsed.verdict.systemImage)
+              .font(.caption)
+              .foregroundStyle(parsed.verdict.color)
+            Text(parsed.verdict.displayName)
+              .font(.caption.weight(.semibold))
+            if let reasoning = parsed.verdictReasoning, !reasoning.isEmpty {
+              Text("— \(reasoning)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            Spacer()
+            Text(parsed.riskLevel.capitalized)
+              .font(.caption2.weight(.semibold))
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(riskColor(parsed.riskLevel).opacity(0.15), in: Capsule())
+              .foregroundStyle(riskColor(parsed.riskLevel))
+          }
+          .padding(8)
+          .background(parsed.verdict.color.opacity(0.06))
+          .clipShape(RoundedRectangle(cornerRadius: 6))
+
+          // Summary snippet
+          if !parsed.summary.isEmpty {
+            Text(parsed.summary)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+          }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+      }
+    }
+    .contentShape(Rectangle())
+    .onTapGesture {
+      // Navigate to agent review detail if available, otherwise to PR detail
+      if let run = associatedRun, !item.reviewOutput.isEmpty {
+        onSelectRun?(run)
+      } else {
         let ownerRepo = "\(item.repoOwner)/\(item.repoName)"
         onSelectPR?(ownerRepo, item.prNumber)
       }
+    }
+  }
+
+  @ViewBuilder
+  private func inlineReviewSummary(_ parsed: ParsedReview) -> some View {
+    HStack(spacing: 4) {
+      if !parsed.issues.isEmpty {
+        Label("\(parsed.issues.count)", systemImage: "exclamationmark.triangle")
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(.orange)
+      }
+      if !parsed.suggestions.isEmpty {
+        Label("\(parsed.suggestions.count)", systemImage: "lightbulb")
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(.blue)
+      }
+    }
+  }
+
+  private func riskColor(_ level: String) -> Color {
+    switch level.lowercased() {
+    case "high", "critical": return .red
+    case "medium": return .orange
+    case "low": return .green
+    default: return .secondary
     }
   }
 

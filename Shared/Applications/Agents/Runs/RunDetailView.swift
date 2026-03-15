@@ -30,16 +30,25 @@ struct RunDetailView: View {
         if let ctx = run.prContext {
           Divider()
           prContextSection(ctx)
+          // PR actions immediately after context (approve/request changes/comment)
+          if isPRReview {
+            Divider()
+            actionButtons
+          }
         }
         // Show parsed review whenever output has structured content (JSON with summary/issues)
         if let output = bestOutput, !output.isEmpty, outputHasStructuredContent(output) {
           Divider()
           parsedReviewSection(output)
-          Divider()
-          actionButtons
+          if !isPRReview {
+            Divider()
+            actionButtons
+          }
         } else {
-          Divider()
-          actionButtons
+          if !isPRReview {
+            Divider()
+            actionButtons
+          }
           if let output = bestOutput, !output.isEmpty {
             Divider()
             rawOutputSection(output)
